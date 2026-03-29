@@ -1,0 +1,153 @@
+/**
+ * History — CSV Export API
+ *
+ * GET — export run data as CSV
+ *
+ * Query params:
+ *   ?runIds=  — comma-separated run IDs to export (required)
+ *
+ * Each row in the CSV = one creator per platform in one run.
+ * Columns: run_id, run_date, run_status, run_note, run_tags,
+ *          creator, platform, followers, organic_avg_views, commercial_avg_views,
+ *          ad_to_organic_ratio, content_count, organic_sample, commercial_sample, status
+ *
+ * Requires team membership or system admin.
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { requireTeamMemberOrSystemAdmin } from "@/lib/auth/guards";
+import { db } from "@/lib/db";
+import { analysisRun } from "@/lib/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
+
+type SnapshotRow = {
+  _v?: number;
+  row: {
+    id: string;
+    instagramUsername?: string | null;
+    tiktokUsername?: string | null;
+    label?: string | null;
+  };
+  status: string;
+  instagram: PlatformData | null;
+  tiktok: PlatformData | null;
+};
+
+type PlatformData = {
+  platform: string;
+  username: string;
+  profile: { followerCount: number | null } | null;
+  organic: { averageViews: number | null; sampleSize: number } | null;
+  commercial: { averageViews: number | null; sampleSize: number } | null;
+  comparison: { adToOrganicRatio: number | null } | null;
+  totalContentCount: number;
+  status: string;
+};
+
+function escapeCSV(val: string | null | undefined): string {
+  if (val == null) return "";
+  const s = String(val);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+export async function GET(request: NextRequest) {
+  const result = await requireTeamMemberOrSystemAdmin();
+  if (result instanceof NextResponse) return result;
+
+  const { team } = result;
+  const params = request.nextUrl.searchParams;
+  const runIdsParam = params.get("runIds");
+
+  if (!runIdsParam) {
+    return NextResponse.json(
+      { error: { code: "BAD_REQUEST", message: "runIds param required." } },
+      { status: 400 }
+    );
+  }
+
+  const runIds = runIdsParam.split(",").map(s => s.trim()).filter(Boolean);
+  if (runIds.length === 0 || runIds.length > 50) {
+    return NextResponse.json(
+      { error: { code: "BAD_REQUEST", message: "1-50 runIds required." } },
+      { status: 400 }
+    );
+  }
+
+  // Fetch runs (team-scoped)
+  const conditions = [inArray(analysisRun.id, runIds)];
+  if (team) conditions.push(eq(analysisRun.teamId, team.teamId));
+
+  const runs = await db
+    .select({
+      id: analysisRun.id,
+      status: analysisRun.status,
+      note: analysisRun.note,
+      tags: analysisRun.tags,
+      startedAt: analysisRun.startedAt,
+      resultSnapshot: analysisRun.resultSnapshot,
+    })
+    .from(analysisRun)
+    .where(and(...conditions));
+
+  // Build CSV
+  const headers = [
+    "run_id", "run_date", "run_status", "run_note", "run_tags",
+    "creator", "platform", "followers",
+    "organic_avg_views", "commercial_avg_views", "ad_to_organic_ratio",
+    "total_content", "organic_sample", "commercial_sample", "creator_status",
+  ];
+
+  const rows: string[] = [headers.join(",")];
+
+  for (const run of runs) {
+    let snapshot: SnapshotRow[] = [];
+    try { snapshot = JSON.parse(run.resultSnapshot as string); } catch { continue; }
+
+    const runDate = run.startedAt ? new Date(run.startedAt as unknown as number * 1000).toISOString().split("T")[0] : "";
+    let tags: string[] = [];
+    try { tags = JSON.parse(run.tags as string); } catch { /* ignore */ }
+
+    for (const entry of snapshot) {
+      // Output one row per platform per creator
+      const platforms: [string, PlatformData | null][] = [
+        ["instagram", entry.instagram],
+        ["tiktok", entry.tiktok],
+      ];
+
+      for (const [platformName, pd] of platforms) {
+        if (!pd) continue;
+
+        rows.push([
+          escapeCSV(run.id),
+          escapeCSV(runDate),
+          escapeCSV(run.status),
+          escapeCSV(run.note),
+          escapeCSV(tags.join("; ")),
+          escapeCSV(pd.username || entry.row?.label || ""),
+          escapeCSV(platformName),
+          String(pd.profile?.followerCount ?? ""),
+          String(pd.organic?.averageViews ?? ""),
+          String(pd.commercial?.averageViews ?? ""),
+          String(pd.comparison?.adToOrganicRatio ?? ""),
+          String(pd.totalContentCount ?? ""),
+          String(pd.organic?.sampleSize ?? ""),
+          String(pd.commercial?.sampleSize ?? ""),
+          escapeCSV(pd.status),
+        ].join(","));
+      }
+    }
+  }
+
+  const csv = rows.join("\n");
+
+  return new NextResponse(csv, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="analysis-export-${Date.now()}.csv"`,
+    },
+  });
+}

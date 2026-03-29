@@ -1,0 +1,654 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design System Tokens — skills.name Language
+   Matte-black surfaces, emerald accents, mono-forward hierarchy, sharp edges
+   --------------------------------------------------------------------------- */
+
+@theme {
+  --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+}
+
+:root {
+  /* Surfaces — canonical cold-black spectrum */
+  --bg-primary: #050505;
+  --bg-secondary: #0a0a0c;
+  --bg-card: #0c0c0e;
+  --bg-card-hover: #111113;
+  --bg-input: #0a0a0c;
+  --bg-elevated: #161618;
+
+  /* Borders — structural hierarchy */
+  --border-subtle: #1e1e1e;
+  --border-default: #1e1e22;
+  --border-strong: #2a2a30;
+
+  /* Text — 3-tier hierarchy (canonical) */
+  --text-primary: #e8e8ec;
+  --text-secondary: #8a8a94;
+  --text-muted: #52525a;
+  --text-inverse: #050505;
+
+  /* Accents — restrained emerald */
+  --accent-green: #10b981;
+  --accent-green-dim: #059669;
+  --accent-green-glow: rgba(16, 185, 129, 0.12);
+  --accent-pink: #ef4444;
+  --accent-pink-dim: #dc2626;
+  --accent-pink-glow: rgba(239, 68, 68, 0.10);
+  --accent-amber: #f59e0b;
+  --accent-blue: #3b82f6;
+
+  /* Shells */
+  --bg-shell: #111113;
+  --border-accent: rgba(16, 185, 129, 0.20);
+  --border-accent-dim: rgba(16, 185, 129, 0.08);
+
+  /* Status */
+  --status-ok: var(--accent-green);
+  --status-warn: var(--accent-amber);
+  --status-error: var(--accent-pink);
+  --status-muted: var(--text-muted);
+
+  /* Transition timing — canonical */
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 320ms;
+  --duration-enter: 280ms;
+  --duration-exit: 180ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Shape */
+  --radius: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-card: rgba(0, 0, 0, 0.3);
+  --shadow-menu: rgba(0, 0, 0, 0.4);
+  --shadow-menu-sm: rgba(0, 0, 0, 0.2);
+
+  /* Dot-grid */
+  --dot-grid-opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+   Light Theme Tokens
+   --------------------------------------------------------------------------- */
+
+[data-theme="light"] {
+  /* Surfaces — Apple-inspired grouped background hierarchy
+     systemGroupedBackground → secondarySystemGroupedBackground → tertiarySystemBackground */
+  --bg-primary: #F2F2F7;        /* warm gray canvas — NOT pure white */
+  --bg-secondary: #E5E5EA;      /* tertiary surface level */
+  --bg-card: #FFFFFF;           /* content cards float above canvas */
+  --bg-card-hover: #F8F8FA;     /* subtle warmth on hover */
+  --bg-input: #FFFFFF;          /* inputs match card surface */
+  --bg-elevated: #EDEDF0;       /* chips, tags, raised controls */
+
+  /* Borders — Apple separator tones (slight indigo warmth) */
+  --border-subtle: #D1D1D6;     /* lightest separator */
+  --border-default: #C7C7CC;    /* standard separator (opaqueSeparator) */
+  --border-strong: #8E8E93;     /* emphasis border (systemGray) */
+
+  /* Text — Apple label hierarchy */
+  --text-primary: #1C1C1E;      /* near-black — high legibility */
+  --text-secondary: #48484A;    /* rich secondary — not washed out */
+  --text-muted: #8E8E93;        /* systemGray — readable helper text */
+  --text-inverse: #FFFFFF;
+
+  /* Accents — vibrant on light, not muted */
+  --accent-green: #34C759;      /* Apple systemGreen — vibrant, alive */
+  --accent-green-dim: #30B350;
+  --accent-green-glow: rgba(52, 199, 89, 0.12);
+  --accent-pink: #FF3B30;       /* Apple systemRed */
+  --accent-pink-dim: #E8342A;
+  --accent-pink-glow: rgba(255, 59, 48, 0.08);
+  --accent-amber: #FF9500;      /* Apple systemOrange */
+  --accent-blue: #007AFF;       /* Apple systemBlue */
+
+  /* Shells */
+  --bg-shell: #FFFFFF;
+  --border-accent: rgba(52, 199, 89, 0.30);
+  --border-accent-dim: rgba(52, 199, 89, 0.12);
+
+  /* Shadows — dimensional, not flat */
+  --shadow-card: rgba(0, 0, 0, 0.04);
+  --shadow-menu: rgba(0, 0, 0, 0.12);
+  --shadow-menu-sm: rgba(0, 0, 0, 0.06);
+
+  /* Dot-grid — nearly invisible on light surfaces */
+  --dot-grid-opacity: 0.35;
+}
+
+/* System theme — mirrors light tokens when OS is light */
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --bg-primary: #F2F2F7;
+    --bg-secondary: #E5E5EA;
+    --bg-card: #FFFFFF;
+    --bg-card-hover: #F8F8FA;
+    --bg-input: #FFFFFF;
+    --bg-elevated: #EDEDF0;
+
+    --border-subtle: #D1D1D6;
+    --border-default: #C7C7CC;
+    --border-strong: #8E8E93;
+
+    --text-primary: #1C1C1E;
+    --text-secondary: #48484A;
+    --text-muted: #8E8E93;
+    --text-inverse: #FFFFFF;
+
+    --accent-green: #34C759;
+    --accent-green-dim: #30B350;
+    --accent-green-glow: rgba(52, 199, 89, 0.12);
+    --accent-pink: #FF3B30;
+    --accent-pink-dim: #E8342A;
+    --accent-pink-glow: rgba(255, 59, 48, 0.08);
+    --accent-amber: #FF9500;
+    --accent-blue: #007AFF;
+
+    --bg-shell: #FFFFFF;
+    --border-accent: rgba(52, 199, 89, 0.30);
+    --border-accent-dim: rgba(52, 199, 89, 0.12);
+
+    --shadow-card: rgba(0, 0, 0, 0.04);
+    --shadow-menu: rgba(0, 0, 0, 0.12);
+    --shadow-menu-sm: rgba(0, 0, 0, 0.06);
+
+    --dot-grid-opacity: 0.35;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  /* Dot-grid technical canvas — naturally subtle in light mode via token contrast */
+  background-image: radial-gradient(circle, var(--border-subtle) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: fixed;
+}
+
+/* Dot-grid texture (utility class) */
+.bg-dotted {
+  background-image: radial-gradient(circle, var(--border-subtle) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Input focus ring — accent-muted glow */
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent-green) !important;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-green-glow);
+}
+
+/* Card hover utility */
+.card-hover {
+  transition:
+    border-color var(--duration-normal) var(--ease-out),
+    background var(--duration-normal) var(--ease-out),
+    transform var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out);
+}
+.card-hover:hover {
+  border-color: var(--border-strong) !important;
+  background-color: var(--bg-card-hover) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--shadow-card, rgba(0, 0, 0, 0.3));
+}
+
+/* Button active press — elements with [data-no-press] are excluded (e.g. top-bar) */
+button:active:not(:disabled):not([data-no-press]) {
+  transform: scale(0.97);
+}
+
+/* ---------------------------------------------------------------------------
+   Animations — restrained, 150ms, no pulse/ping
+   --------------------------------------------------------------------------- */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in { animation: fade-in 0.15s ease-out both; }
+.animate-slide-up { animation: slide-up 0.2s ease-out both; }
+.animate-slide-up-delay { animation: slide-up 0.2s ease-out 0.05s both; }
+.animate-slide-up-delay-2 { animation: slide-up 0.2s ease-out 0.1s both; }
+.animate-slide-up-delay-3 { animation: slide-up 0.2s ease-out 0.15s both; }
+
+/* Legacy compat */
+.animate-in { animation-fill-mode: both; }
+.fade-in { animation: fade-in 0.15s ease-out; }
+.slide-in-from-bottom-2 { animation: slide-up 0.2s ease-out; }
+.slide-in-from-bottom-4 { animation: slide-up 0.25s ease-out; }
+
+/* Status pulse — for running states only */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.animate-status-pulse { animation: status-pulse 1.5s ease-in-out infinite; }
+
+/* ---------------------------------------------------------------------------
+   Scrollbar
+   --------------------------------------------------------------------------- */
+
+.overflow-x-auto::-webkit-scrollbar { height: 4px; }
+.overflow-x-auto::-webkit-scrollbar-track { background: transparent; }
+.overflow-x-auto::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+.overflow-x-auto::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+textarea::-webkit-scrollbar { width: 4px; }
+textarea::-webkit-scrollbar-track { background: transparent; }
+textarea::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
+
+/* ---------------------------------------------------------------------------
+   Intake Shell — sharp-edged professional
+   --------------------------------------------------------------------------- */
+
+.intake-shell {
+  background: var(--bg-shell);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+}
+
+.intake-textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  transition: border-color 0.15s ease;
+}
+.intake-textarea:focus {
+  border-color: var(--accent-green);
+  outline: none;
+}
+
+.guide-panel { border-left: 1px solid var(--border-accent); }
+
+.cap-chip {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border-subtle);
+}
+
+/* Guide trigger button */
+.guide-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.guide-trigger:hover {
+  color: var(--accent-green);
+  border-color: var(--border-accent);
+  background: var(--accent-green-glow);
+}
+.guide-trigger svg { transition: color 0.15s ease; }
+
+.preview-strip {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+}
+
+.action-bar {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   Skeleton Shimmer
+   --------------------------------------------------------------------------- */
+
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    #252525 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Modal / Dialog — sharp edges
+   --------------------------------------------------------------------------- */
+
+.modal-backdrop { animation: fade-in 0.15s ease-out both; }
+
+.modal-panel { animation: modal-scale-in 0.15s ease-out both; }
+
+@keyframes modal-scale-in {
+  from { opacity: 0; transform: scale(0.98) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Drawer */
+.drawer-backdrop { animation: fade-in 0.15s ease-out both; }
+.drawer-panel { animation: drawer-slide-in 0.15s ease-out both; }
+
+@keyframes drawer-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+/* ---------------------------------------------------------------------------
+   Auth — subtle blurred background
+   --------------------------------------------------------------------------- */
+
+.auth-blur-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.6;
+  filter: blur(8px) saturate(0.65);
+  pointer-events: none;
+  transform: scale(1.05);
+}
+
+/* ---------------------------------------------------------------------------
+   Guide Modal — SVG animations & step transitions
+   --------------------------------------------------------------------------- */
+
+/* Path drawing animation */
+@keyframes guide-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Node pulse */
+@keyframes guide-node-pulse {
+  0%, 100% { opacity: 0.4; r: 3; }
+  50% { opacity: 1; r: 4; }
+}
+
+/* Fade in up */
+@keyframes guide-fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scan line */
+@keyframes guide-scan {
+  0% { transform: translateY(0); opacity: 0.6; }
+  100% { transform: translateY(48px); opacity: 0; }
+}
+
+/* Data flow — horizontal */
+@keyframes guide-flow {
+  0% { transform: translateX(-8px); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateX(60px); opacity: 0; }
+}
+
+/* Signal sweep */
+@keyframes guide-sweep {
+  0% { stroke-dashoffset: 100; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* Matrix cell fill */
+@keyframes guide-cell-fill {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Step content crossfade */
+.guide-step-enter {
+  animation: guide-fade-in-up 0.2s ease-out both;
+}
+
+/* Guide SVG container */
+.guide-svg-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 16px 0;
+}
+
+.guide-svg-wrap svg {
+  overflow: visible;
+}
+
+/* Guide dot indicators */
+.guide-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+.guide-dot:hover { background: var(--text-muted); }
+.guide-dot.active {
+  background: var(--accent-green);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+}
+
+/* Format hint (replaces verbose guide panel) */
+.format-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.format-hint code {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Account Dropdown Menu
+   --------------------------------------------------------------------------- */
+
+.account-trigger {
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.12s ease;
+}
+.account-trigger:hover {
+  background: var(--bg-elevated) !important;
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 200px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 50;
+  animation: account-menu-in 0.12s ease-out both;
+  box-shadow: 0 8px 24px var(--shadow-menu, rgba(0,0,0,0.4)), 0 2px 8px var(--shadow-menu-sm, rgba(0,0,0,0.2));
+}
+
+@keyframes account-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.account-menu-header {
+  padding: 8px 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.account-menu-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 2px 4px;
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.1s ease;
+  text-decoration: none;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+.account-menu-item:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.account-menu-item--danger:hover {
+  background: var(--accent-pink-glow);
+  color: var(--accent-pink);
+}
+
+.account-menu-section {
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.account-menu-section-label {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.account-menu-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-toggle-group {
+  display: flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.account-toggle-btn {
+  padding: 2px 8px;
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  letter-spacing: 0.02em;
+}
+.account-toggle-btn + .account-toggle-btn {
+  border-left: 1px solid var(--border-subtle);
+}
+.account-toggle-btn:hover {
+  color: var(--text-secondary);
+}
+.account-toggle-btn.active {
+  background: var(--accent-green-glow);
+  color: var(--accent-green);
+}
+
+
+/* ---------------------------------------------------------------------------
+   Dashboard Responsive — System-Level Layout Rules
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 639px) {
+  /* Tighter intake shell on mobile */
+  .intake-shell { padding: 12px !important; }
+  
+  /* Smaller hero text */
+  .animate-slide-up h1.text-xl { font-size: 16px; }
+
+  /* More compact cap chips */
+  .cap-chip { font-size: 9px; padding: 1px 5px; }
+  
+  /* Format hint — stack on its own line */
+  .format-hint { font-size: 9px; padding: 4px 8px; }
+
+  /* Action bar — tighter buttons */
+  .action-bar button { padding-left: 12px; padding-right: 12px; }
+}
+
+@media (max-width: 767px) {
+  /* Reduce main content padding */
+  main.px-4 { padding-left: 8px; padding-right: 8px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced Motion — native OS preference
+   --------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
