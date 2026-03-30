@@ -1,14 +1,10 @@
 /**
  * Tests for batch-types derivation functions.
- * Covers deriveRowStatus, composeRowResult, deriveBatchSummary.
+ * Covers deriveRowStatus, composeRowResult, computeBatchSummary.
  */
 import type { BatchImportRow, BatchHandleJob } from "@/lib/domain/batch-types";
-import {
-  handleJobKey,
-  deriveRowStatus,
-  composeRowResult,
-  deriveBatchSummary,
-} from "@/lib/domain/batch-types";
+import { handleJobKey } from "@/lib/domain/batch-types";
+import { deriveRowStatus, composeRowResult, computeBatchSummary } from "@/lib/domain/batch-queue";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,10 +109,10 @@ describe("deriveRowStatus", () => {
     expect(deriveRowStatus(row, jobs)).toBe("complete");
   });
 
-  it("returns queued for missing handle jobs (new job map)", () => {
+  it("returns error for missing handle jobs (empty job map)", () => {
     const row = makeRow();
     const jobs = new Map<string, BatchHandleJob>();
-    expect(deriveRowStatus(row, jobs)).toBe("queued");
+    expect(deriveRowStatus(row, jobs)).toBe("error");
   });
 });
 
@@ -151,10 +147,10 @@ describe("composeRowResult", () => {
 });
 
 // ---------------------------------------------------------------------------
-// deriveBatchSummary
+// computeBatchSummary
 // ---------------------------------------------------------------------------
 
-describe("deriveBatchSummary", () => {
+describe("computeBatchSummary", () => {
   it("computes correct summary", () => {
     const rows = [
       makeRow({ id: "r1", instagramUsername: "a", tiktokUsername: "x" }),
@@ -168,7 +164,7 @@ describe("deriveBatchSummary", () => {
       makeJob("tiktok", "x", "success"),
     ]);
 
-    const summary = deriveBatchSummary(rows, jobs);
+    const summary = computeBatchSummary(rows, jobs);
 
     expect(summary.totalRows).toBe(3);
     expect(summary.completeRows).toBe(2); // r1 (both success), r3 (ig-only success)

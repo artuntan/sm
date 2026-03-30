@@ -9,25 +9,41 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireTeamMemberOrSystemAdmin } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { analysisRun } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+
+const UpdateNoteSchema = z.object({
+  runId: z.string().min(1),
+  note: z.string().max(2000),
+});
 
 export async function PATCH(request: NextRequest) {
   const result = await requireTeamMemberOrSystemAdmin();
   if (result instanceof NextResponse) return result;
 
   const { team } = result;
-  const body = await request.json();
-  const { runId, note } = body as { runId: string; note: string };
 
-  if (!runId) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
     return NextResponse.json(
-      { error: { code: "BAD_REQUEST", message: "runId is required." } },
+      { error: { code: "BAD_REQUEST", message: "Invalid JSON" } },
       { status: 400 }
     );
   }
+
+  const parsed = UpdateNoteSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message: "Invalid input", details: parsed.error.flatten() } },
+      { status: 422 }
+    );
+  }
+  const { runId, note } = parsed.data;
 
   // Verify run exists and belongs to user's team
   const whereClause = team

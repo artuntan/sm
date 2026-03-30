@@ -10,25 +10,40 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireTeamMemberOrSystemAdmin } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { analysisRun } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+
+const DeleteSchema = z.object({
+  runIds: z.array(z.string().min(1)).min(1),
+});
 
 export async function DELETE(request: NextRequest) {
   const result = await requireTeamMemberOrSystemAdmin();
   if (result instanceof NextResponse) return result;
 
   const { team } = result;
-  const body = await request.json();
-  const { runIds } = body as { runIds: string[] };
 
-  if (!Array.isArray(runIds) || runIds.length === 0) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
     return NextResponse.json(
-      { error: { code: "BAD_REQUEST", message: "runIds array is required." } },
+      { error: { code: "BAD_REQUEST", message: "Invalid JSON" } },
       { status: 400 }
     );
   }
+
+  const parsed = DeleteSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message: "Invalid input", details: parsed.error.flatten() } },
+      { status: 422 }
+    );
+  }
+  const { runIds } = parsed.data;
 
   // Verify all runs belong to user's team (unless system admin with no team)
   if (team) {

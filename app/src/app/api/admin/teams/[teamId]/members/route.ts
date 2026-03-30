@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireSystemAdmin } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { teamMembership, user, team } from "@/lib/db/schema";
@@ -59,6 +60,15 @@ export async function GET(
   });
 }
 
+const UpdateRoleSchema = z.object({
+  membershipId: z.string().min(1),
+  role: z.enum(["team_admin", "member"]),
+});
+
+const DeactivateMemberSchema = z.object({
+  membershipId: z.string().min(1),
+});
+
 export async function PATCH(
   request: NextRequest,
   context: RouteContext
@@ -67,25 +77,25 @@ export async function PATCH(
   if (admin instanceof NextResponse) return admin;
 
   const { teamId } = await context.params;
-  const body = await request.json();
-  const { membershipId, role } = body as {
-    membershipId: string;
-    role: "team_admin" | "member";
-  };
 
-  if (!membershipId || !role) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
     return NextResponse.json(
-      { error: { code: "INVALID_REQUEST", message: "membershipId and role required." } },
+      { error: { code: "INVALID_REQUEST", message: "Invalid JSON" } },
       { status: 400 }
     );
   }
 
-  if (!["team_admin", "member"].includes(role)) {
+  const parsed = UpdateRoleSchema.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: { code: "INVALID_REQUEST", message: "Role must be 'team_admin' or 'member'." } },
-      { status: 400 }
+      { error: { code: "VALIDATION_ERROR", message: "Invalid input", details: parsed.error.flatten() } },
+      { status: 422 }
     );
   }
+  const { membershipId, role } = parsed.data;
 
   await db
     .update(teamMembership)
@@ -108,15 +118,25 @@ export async function DELETE(
   if (admin instanceof NextResponse) return admin;
 
   const { teamId } = await context.params;
-  const body = await request.json();
-  const { membershipId } = body as { membershipId: string };
 
-  if (!membershipId) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
     return NextResponse.json(
-      { error: { code: "INVALID_REQUEST", message: "membershipId required." } },
+      { error: { code: "INVALID_REQUEST", message: "Invalid JSON" } },
       { status: 400 }
     );
   }
+
+  const parsed = DeactivateMemberSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message: "Invalid input", details: parsed.error.flatten() } },
+      { status: 422 }
+    );
+  }
+  const { membershipId } = parsed.data;
 
   await db
     .update(teamMembership)
