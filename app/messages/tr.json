@@ -1,0 +1,85 @@
+{
+  "common": {
+    "signIn": "Giriş Yap",
+    "signUp": "Kayıt Ol",
+    "signOut": "Çıkış Yap",
+    "loading": "Yükleniyor...",
+    "save": "Kaydet",
+    "cancel": "İptal",
+    "delete": "Sil",
+    "confirm": "Onayla",
+    "search": "Ara...",
+    "noResults": "Sonuç bulunamadı",
+    "error": "Bir hata oluştu",
+    "retry": "Tekrar Dene"
+  },
+  "auth": {
+    "email": "E-posta",
+    "password": "Şifre",
+    "signingIn": "Giriş yapılıyor...",
+    "signInTitle": "Giriş Yap",
+    "signInSubtitle": "Çalışma alanına erişmek için bilgilerinizi girin.",
+    "signUpTitle": "Kayıt Ol",
+    "signUpSubtitle": "Başlamak için hesabınızı oluşturun.",
+    "noAccount": "Hesabınız yok mu?",
+    "hasAccount": "Zaten hesabınız var mı?",
+    "name": "İsim",
+    "signInFailed": "Giriş başarısız oldu. Lütfen tekrar deneyin.",
+    "signUpFailed": "Kayıt başarısız oldu. Lütfen tekrar deneyin."
+  },
+  "nav": {
+    "workspace": "Çalışma Alanı",
+    "campaigns": "Kampanyalar",
+    "warehouse": "Veri Deposu",
+    "coverage": "Kapsam",
+    "history": "Geçmiş",
+    "admin": "Yönetim",
+    "settings": "Ayarlar"
+  },
+  "workspace": {
+    "title": "İçerik Üretici Analizi",
+    "batchImport": "Toplu İçe Aktarma",
+    "analyze": "Analiz Et",
+    "export": "Dışa Aktar",
+    "creators": "içerik üretici",
+    "organic": "Organik",
+    "commercial": "Ticari",
+    "views": "Görüntülenme",
+    "likes": "Beğeni",
+    "engagement": "Etkileşim"
+  },
+  "campaigns": {
+    "title": "Kampanyalar",
+    "create": "Yeni Kampanya",
+    "draft": "Taslak",
+    "active": "Aktif",
+    "completed": "Tamamlandı",
+    "archived": "Arşivlendi",
+    "noCampaigns": "Henüz kampanya yok",
+    "addCreator": "İçerik Üretici Ekle",
+    "deliverables": "Teslimatlar"
+  },
+  "admin": {
+    "title": "Yönetim Paneli",
+    "users": "Kullanıcılar",
+    "teams": "Ekipler",
+    "pendingApproval": "Onay Bekliyor",
+    "approved": "Onaylandı",
+    "rejected": "Reddedildi",
+    "approve": "Onayla",
+    "reject": "Reddet",
+    "systemAdmin": "Sistem Yöneticisi",
+    "teamAdmin": "Ekip Yöneticisi",
+    "member": "Üye"
+  },
+  "status": {
+    "pending": "Beklemede",
+    "approved": "Onaylandı",
+    "rejected": "Reddedildi",
+    "suspended": "Askıya Alındı",
+    "running": "Çalışıyor",
+    "complete": "Tamamlandı",
+    "partial": "Kısmi",
+    "error": "Hata"
+  }
+}
