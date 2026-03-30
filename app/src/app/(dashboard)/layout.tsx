@@ -9,11 +9,16 @@
  */
 
 import { AppShell } from "@/app/components/ui/AppShell";
+import { ErrorBoundary } from "@/app/components/ui/ErrorBoundary";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <ErrorBoundary>
+      <AppShell>{children}</AppShell>
+    </ErrorBoundary>
+  );
 }

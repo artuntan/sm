@@ -19,6 +19,10 @@ export async function GET(request: NextRequest) {
 
   const status = request.nextUrl.searchParams.get("status") || "pending";
 
+  // Parse pagination
+  const limit = Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "50"), 100);
+  const offset = parseInt(request.nextUrl.searchParams.get("offset") || "0");
+
   let rows;
   if (status === "all") {
     rows = await db
@@ -30,7 +34,9 @@ export async function GET(request: NextRequest) {
         approvalStatus: user.approvalStatus,
         createdAt: user.createdAt,
       })
-      .from(user);
+      .from(user)
+      .limit(limit)
+      .offset(offset);
   } else {
     rows = await db
       .select({
@@ -42,7 +48,9 @@ export async function GET(request: NextRequest) {
         createdAt: user.createdAt,
       })
       .from(user)
-      .where(eq(user.approvalStatus, status as "pending" | "approved" | "rejected" | "suspended"));
+      .where(eq(user.approvalStatus, status as "pending" | "approved" | "rejected" | "suspended"))
+      .limit(limit)
+      .offset(offset);
   }
 
   // Enrich with team membership info

@@ -8,6 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireTeamAdmin } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { teamJoinRequest, teamMembership, user } from "@/lib/db/schema";
@@ -48,20 +49,31 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ requests });
 }
 
-export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { requestId, action, reason } = body as {
-    requestId: string;
-    action: "approve" | "reject";
-    reason?: string;
-  };
+const ReviewRequestSchema = z.object({
+  requestId: z.string().min(1),
+  action: z.enum(["approve", "reject"]),
+  reason: z.string().optional(),
+});
 
-  if (!requestId || !action) {
+export async function POST(request: NextRequest) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
     return NextResponse.json(
-      { error: { code: "INVALID_REQUEST", message: "requestId and action required." } },
+      { error: { code: "INVALID_REQUEST", message: "Invalid JSON" } },
       { status: 400 }
     );
   }
+
+  const parsed = ReviewRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: { code: "VALIDATION_ERROR", message: "Invalid input", details: parsed.error.flatten() } },
+      { status: 422 }
+    );
+  }
+  const { requestId, action, reason } = parsed.data;
 
   // Find the request
   const rows = await db
@@ -84,24 +96,26 @@ export async function POST(request: NextRequest) {
   if (admin instanceof NextResponse) return admin;
 
   if (action === "approve") {
-    // Update request
-    await db
-      .update(teamJoinRequest)
-      .set({
-        status: "approved",
-        reviewedBy: admin.id,
-        reviewedAt: new Date(),
-      })
-      .where(eq(teamJoinRequest.id, requestId));
+    await db.transaction(async (tx) => {
+      // Update request
+      await tx
+        .update(teamJoinRequest)
+        .set({
+          status: "approved",
+          reviewedBy: admin.id,
+          reviewedAt: new Date(),
+        })
+        .where(eq(teamJoinRequest.id, requestId));
 
-    // Create membership
-    await db.insert(teamMembership).values({
-      id: crypto.randomUUID(),
-      userId: joinReq.userId,
-      teamId: joinReq.teamId,
-      role: "member",
-      active: true,
-      joinedAt: new Date(),
+      // Create membership
+      await tx.insert(teamMembership).values({
+        id: crypto.randomUUID(),
+        userId: joinReq.userId,
+        teamId: joinReq.teamId,
+        role: "member",
+        active: true,
+        joinedAt: new Date(),
+      });
     });
   } else {
     await db

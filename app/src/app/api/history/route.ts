@@ -9,6 +9,7 @@
  *   ?archived= — "1" to include archived runs, "only" for only archived (default: exclude)
  *   ?tag=      — filter by tag (runs must contain this tag)
  *   ?limit=    — max results (default 50, max 100)
+ *   ?offset=   — skip N results for pagination (default 0)
  *
  * Requires active team membership or system admin role.
  */
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
     parseInt(params.get("limit") || "50", 10),
     100
   );
+  const offset = parseInt(params.get("offset") || "0", 10);
   const statusFilter = params.get("status") || null;
   const searchQuery = params.get("q") || null;
   const archivedParam = params.get("archived") || null;
@@ -89,9 +91,11 @@ export async function GET(request: NextRequest) {
         .where(and(...conditions))
         .orderBy(desc(analysisRun.startedAt))
         .limit(limit)
+        .offset(offset)
     : await baseQuery
         .orderBy(desc(analysisRun.startedAt))
-        .limit(limit);
+        .limit(limit)
+        .offset(offset);
 
   return NextResponse.json({ runs });
 }

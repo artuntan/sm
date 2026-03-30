@@ -20,6 +20,7 @@ import {
   timestamp,
   jsonb,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
@@ -100,7 +101,9 @@ export const session = pgTable("session", {
   userId: text("userId")
     .notNull()
     .references(() => user.id),
-});
+}, (table) => [
+  index("session_user_id_idx").on(table.userId),
+]);
 
 export const account = pgTable("account", {
   id: text("id").primaryKey(),
@@ -152,7 +155,10 @@ export const teamMembership = pgTable("team_membership", {
   role: teamRoleEnum("role").notNull().default("member"),
   active: boolean("active").notNull().default(true),
   joinedAt: timestamp("joinedAt").notNull().defaultNow(),
-});
+}, (table) => [
+  index("team_membership_user_id_idx").on(table.userId),
+  index("team_membership_team_id_idx").on(table.teamId),
+]);
 
 export const teamJoinRequest = pgTable("team_join_request", {
   id: text("id").primaryKey(),
@@ -167,7 +173,11 @@ export const teamJoinRequest = pgTable("team_join_request", {
   reviewedAt: timestamp("reviewedAt"),
   rejectionReason: text("rejectionReason"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
-});
+}, (table) => [
+  index("team_join_request_user_id_idx").on(table.userId),
+  index("team_join_request_team_id_idx").on(table.teamId),
+  index("team_join_request_status_idx").on(table.status),
+]);
 
 // ---------------------------------------------------------------------------
 // Analysis run history (team-scoped)
@@ -200,7 +210,11 @@ export const analysisRun = pgTable("analysis_run", {
   archived: boolean("archived").notNull().default(false),
   /** JSON array of string tags for campaign/client grouping */
   tags: jsonb("tags").notNull().default([]),
-});
+}, (table) => [
+  index("analysis_run_team_id_idx").on(table.teamId),
+  index("analysis_run_user_id_idx").on(table.userId),
+  index("analysis_run_status_idx").on(table.status),
+]);
 
 // ---------------------------------------------------------------------------
 // Campaign entity (connects Workspace ↔ Coverage)
@@ -231,7 +245,11 @@ export const campaign = pgTable("campaign", {
   createdBy: text("createdBy")
     .notNull()
     .references(() => user.id),
-});
+}, (table) => [
+  index("campaign_team_id_idx").on(table.teamId),
+  index("campaign_brand_id_idx").on(table.brandId),
+  index("campaign_status_idx").on(table.status),
+]);
 
 export const campaignCreator = pgTable("campaign_creator", {
   id: text("id").primaryKey(),
@@ -248,7 +266,9 @@ export const campaignCreator = pgTable("campaign_creator", {
   budgetCurrency: text("budgetCurrency"),
   notes: text("notes"),
   addedAt: text("addedAt").notNull(),
-});
+}, (table) => [
+  index("campaign_creator_campaign_id_idx").on(table.campaignId),
+]);
 
 export const campaignDeliverable = pgTable("campaign_deliverable", {
   id: text("id").primaryKey(),
@@ -272,7 +292,10 @@ export const campaignDeliverable = pgTable("campaign_deliverable", {
   /** Why it matched (e.g., "caption_keyword: dimes", "tagged_user: dimes.tr") */
   matchReason: text("matchReason"),
   detectedAt: text("detectedAt").notNull(),
-});
+}, (table) => [
+  index("campaign_deliverable_campaign_id_idx").on(table.campaignId),
+  index("campaign_deliverable_creator_id_idx").on(table.creatorId),
+]);
 
 // ---------------------------------------------------------------------------
 // Coverage product tables (Dimes Content Coverage Intelligence)
@@ -313,7 +336,11 @@ export const coveragePost = pgTable("coverage_post", {
     .notNull()
     .default([]),
   clusterFingerprint: text("clusterFingerprint"),
-});
+}, (table) => [
+  index("coverage_post_brand_id_idx").on(table.brandId),
+  index("coverage_post_account_id_idx").on(table.accountId),
+  index("coverage_post_scan_run_id_idx").on(table.scanRunId),
+]);
 
 // Per-account scan state — durable cursor for fast scans
 export const coverageAccountScanState = pgTable(
@@ -349,7 +376,9 @@ export const creatorScanCache = pgTable("creator_scan_cache", {
   fetchedAt: text("fetchedAt").notNull(),
   /** ISO timestamp: computed cache expiry */
   expiresAt: text("expiresAt").notNull(),
-});
+}, (table) => [
+  index("creator_scan_cache_platform_username_idx").on(table.platform, table.username),
+]);
 
 // ---------------------------------------------------------------------------
 // M2 — Normalized Media Warehouse
@@ -390,7 +419,9 @@ export const creatorMediaItem = pgTable("creator_media_item", {
   previousViews: integer("previousViews"),
   /** How many times metrics have been updated */
   metricUpdateCount: integer("metricUpdateCount").notNull().default(1),
-});
+}, (table) => [
+  index("creator_media_item_platform_username_idx").on(table.platform, table.username),
+]);
 
 // ---------------------------------------------------------------------------
 // M3 — Creator Scan Profile (Adaptive Re-Scan Policy)
@@ -420,7 +451,9 @@ export const creatorScanProfile = pgTable("creator_scan_profile", {
   /** JSON: profile summary snapshot (followers, name, etc.) */
   profileSnapshotJson: jsonb("profileSnapshotJson"),
   updatedAt: text("updatedAt").notNull(),
-});
+}, (table) => [
+  index("creator_scan_profile_platform_username_idx").on(table.platform, table.username),
+]);
 
 // ---------------------------------------------------------------------------
 // Influencer Identity — Links IG + TT accounts as one person

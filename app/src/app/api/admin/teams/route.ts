@@ -14,11 +14,16 @@ import { team, teamMembership, user } from "@/lib/db/schema";
 import { eq, and, sql, count } from "drizzle-orm";
 import crypto from "crypto";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const admin = await requireSystemAdmin();
   if (admin instanceof NextResponse) return admin;
 
-  // Get all teams with member counts
+  // Parse pagination
+  const url = new URL(request.url);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
+  const offset = parseInt(url.searchParams.get("offset") || "0");
+
+  // Get teams with member counts (paginated)
   const teams = await db
     .select({
       id: team.id,
@@ -27,7 +32,9 @@ export async function GET() {
       active: team.active,
       createdAt: team.createdAt,
     })
-    .from(team);
+    .from(team)
+    .limit(limit)
+    .offset(offset);
 
   // For each team, get member count and admins
   const teamsWithDetails = await Promise.all(
