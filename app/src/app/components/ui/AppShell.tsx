@@ -14,6 +14,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Modal } from "@/app/components/ui/Modal";
+import { ProductFooter } from "@/app/components/ui/ProductFooter";
 import type { ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
@@ -246,7 +247,7 @@ export function AppShell({
   });
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "var(--bg-primary)" }}>
+    <div className="min-h-screen" style={{ backgroundColor: "var(--bg-primary)", display: "flex", flexDirection: "column" }}>
       {/* ── Responsive nav CSS (injected once) ── */}
       <style dangerouslySetInnerHTML={{ __html: `
         .shell-nav-scroll {
@@ -474,9 +475,12 @@ export function AppShell({
       </header>
 
       {/* ── Content ── */}
-      <main className="mx-auto px-4 py-4" style={{ maxWidth }}>
+      <main className="mx-auto px-4 py-4 flex-1" style={{ maxWidth, width: "100%" }}>
         {children}
       </main>
+
+      {/* ── Product Footer ── */}
+      <ProductFooter maxWidth={maxWidth} />
 
       {/* ── Settings Modal ── */}
       {identity && (
