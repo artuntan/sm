@@ -267,9 +267,14 @@ function buildScanFeedback(result: ScanRouteResponse): ScanFeedback {
 // Component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Module-level cache — instant render on revisit
+// ---------------------------------------------------------------------------
+let _coverageCache: ReportData | null = null;
+
 export default function CoveragePage() {
-  const [report, setReport] = useState<ReportData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState<ReportData | null>(_coverageCache);
+  const [loading, setLoading] = useState(_coverageCache === null);
   const [error, setError] = useState<string | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<string>("all");
   const [scanning, setScanning] = useState(false);
@@ -281,7 +286,7 @@ export default function CoveragePage() {
   // Fetch report data
   const fetchReport = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!_coverageCache) setLoading(true);
       const url =
         selectedBrand !== "all"
           ? `/api/dimes/report?brand=${selectedBrand}`
@@ -289,6 +294,7 @@ export default function CoveragePage() {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      _coverageCache = data;
       setReport(data);
       setError(null);
     } catch (err) {

@@ -46,7 +46,7 @@ import {
   handleKey,
   type BatchQueueHandle,
 } from "@/lib/domain/batch-queue";
-import { useSession, signOut } from "@/lib/auth/client";
+import { signOut } from "@/lib/auth/client";
 import { AuthSpinner } from "@/app/components/ui/Skeleton";
 import { Modal } from "@/app/components/ui/Modal";
 
@@ -271,76 +271,81 @@ type SortDir = "asc" | "desc";
 
 type StatusFilter = "all" | "complete" | "partial" | "error" | "running" | "queued";
 
+// ---------------------------------------------------------------------------
+// Module-level auth cache — instant render on revisit, no AuthSpinner flash
+// ---------------------------------------------------------------------------
+type AuthMeData = {
+  name: string;
+  approvalStatus: string;
+  isSystemAdmin: boolean;
+  team: { teamId: string; role: string; teamName: string } | null;
+  hasPendingTeamRequest?: boolean;
+};
+let _authMeCache: AuthMeData | null = null;
+let _authMePromise: Promise<AuthMeData | null> | null = null;
+
+function getAuthMe(forceRefresh = false): Promise<AuthMeData | null> {
+  if (!forceRefresh && _authMePromise) return _authMePromise;
+  _authMePromise = fetch("/api/auth/me")
+    .then(async (res) => {
+      if (!res.ok) return null;
+      const data = await res.json();
+      _authMeCache = data;
+      return data as AuthMeData;
+    })
+    .catch(() => _authMeCache)
+    .finally(() => {
+      setTimeout(() => { _authMePromise = null; }, 60_000);
+    });
+  return _authMePromise;
+}
+
+function resolveAuthFromData(data: AuthMeData | null): {
+  state: "unauthenticated" | "pending" | "approved-no-team" | "team-pending" | "authorized";
+  team: { teamId: string; role: string } | null;
+  isSystemAdmin: boolean;
+  userName: string;
+  teamName: string;
+} {
+  if (!data) return { state: "unauthenticated", team: null, isSystemAdmin: false, userName: "", teamName: "" };
+  const userName = data.name || "";
+  if (data.approvalStatus !== "approved") return { state: "pending", team: null, isSystemAdmin: false, userName, teamName: "" };
+  if (data.isSystemAdmin) return { state: "authorized", team: data.team, isSystemAdmin: true, userName, teamName: data.team?.teamName || "Global Admin" };
+  if (!data.team) {
+    return data.hasPendingTeamRequest
+      ? { state: "team-pending", team: null, isSystemAdmin: false, userName, teamName: "" }
+      : { state: "approved-no-team", team: null, isSystemAdmin: false, userName, teamName: "" };
+  }
+  return { state: "authorized", team: data.team, isSystemAdmin: false, userName, teamName: data.team.teamName || "" };
+}
+
 export default function Home() {
   const router = useRouter();
-  const { data: sessionData, isPending: sessionLoading } = useSession();
+
+  // Initialize from cache — no AuthSpinner flash on revisit
+  const cachedAuth = _authMeCache ? resolveAuthFromData(_authMeCache) : null;
 
   // Auth state
-  const [authState, setAuthState] = useState<"loading" | "unauthenticated" | "pending" | "approved-no-team" | "team-pending" | "authorized">("loading");
-  const [teamContext, setTeamContext] = useState<{ teamId: string; role: string } | null>(null);
-  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
-  const [userName, setUserName] = useState("");
-  const [teamName, setTeamName] = useState("");
-  const authCheckDoneRef = useRef(false);
-  const lastUserIdRef = useRef<string | null>(null);
+  const [authState, setAuthState] = useState<"loading" | "unauthenticated" | "pending" | "approved-no-team" | "team-pending" | "authorized">(cachedAuth?.state ?? "loading");
+  const [teamContext, setTeamContext] = useState<{ teamId: string; role: string } | null>(cachedAuth?.team ?? null);
+  const [isSystemAdmin, setIsSystemAdmin] = useState(cachedAuth?.isSystemAdmin ?? false);
+  const [userName, setUserName] = useState(cachedAuth?.userName ?? "");
+  const [teamName, setTeamName] = useState(cachedAuth?.teamName ?? "");
 
-  // Resolve auth state: runs once per meaningful session transition
-  const resolveAuthState = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/me");
-      if (!res.ok) {
-        setAuthState("unauthenticated");
-        return;
-      }
-      const data = await res.json();
-      setUserName(data.name || "");
-      if (data.approvalStatus !== "approved") {
-        setAuthState("pending");
-        return;
-      }
-      // System admin bypasses team-gating entirely
-      if (data.isSystemAdmin) {
-        setIsSystemAdmin(true);
-        setTeamContext(data.team);
-        setTeamName(data.team?.teamName || "Global Admin");
-        setAuthState("authorized");
-        return;
-      }
-      if (!data.team) {
-        if (data.hasPendingTeamRequest) {
-          setAuthState("team-pending");
-        } else {
-          setAuthState("approved-no-team");
-        }
-        return;
-      }
-      setTeamContext(data.team);
-      setTeamName(data.team.teamName || "");
-      setAuthState("authorized");
-    } catch {
-      setAuthState("unauthenticated");
-    }
-  }, []);
-
-  // Check auth state on meaningful session transitions only
+  // Direct auth/me call — single network request, no serial waterfall
   useEffect(() => {
-    if (sessionLoading) return; // Wait for session to resolve
-
-    const userId = sessionData?.user?.id ?? null;
-
-    // Only re-check if the user identity actually changed
-    if (authCheckDoneRef.current && userId === lastUserIdRef.current) return;
-
-    lastUserIdRef.current = userId;
-    authCheckDoneRef.current = true;
-
-    if (!userId) {
-      setAuthState("unauthenticated");
-      return;
-    }
-
-    resolveAuthState();
-  }, [sessionData?.user?.id, sessionLoading, resolveAuthState]);
+    let cancelled = false;
+    getAuthMe().then((data) => {
+      if (cancelled) return;
+      const resolved = resolveAuthFromData(data);
+      setAuthState(resolved.state);
+      setTeamContext(resolved.team);
+      setIsSystemAdmin(resolved.isSystemAdmin);
+      setUserName(resolved.userName);
+      setTeamName(resolved.teamName);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // Workspace state
   const [phase, setPhase] = useState<BatchWorkspacePhase>("intake");
@@ -586,10 +591,15 @@ export default function Home() {
 
   // Controlled re-check: re-fetch /api/auth/me without full page reload
   const handleRecheck = useCallback(() => {
-    authCheckDoneRef.current = false;
-    lastUserIdRef.current = null;
-    resolveAuthState();
-  }, [resolveAuthState]);
+    getAuthMe(true).then((data) => {
+      const resolved = resolveAuthFromData(data);
+      setAuthState(resolved.state);
+      setTeamContext(resolved.team);
+      setIsSystemAdmin(resolved.isSystemAdmin);
+      setUserName(resolved.userName);
+      setTeamName(resolved.teamName);
+    });
+  }, []);
 
   // ── Redirect unauthenticated users via effect (not during render) ────────
   useEffect(() => {

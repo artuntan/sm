@@ -952,13 +952,19 @@ function CreatorCard({
 // Main Page Component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Module-level cache — survives route transitions for instant re-render
+// ---------------------------------------------------------------------------
+let _warehouseCache: WarehouseResponse | null = null;
+
 export default function WarehousePage() {
   const bp = useBreakpoint();
   const compact = isCompact(bp);
   const stackBenchmarks = shouldStack(bp);
 
-  const [data, setData] = useState<WarehouseResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Initialize from cache — no loading flash on revisit
+  const [data, setData] = useState<WarehouseResponse | null>(_warehouseCache);
+  const [loading, setLoading] = useState(_warehouseCache === null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<
     "all" | "fresh" | "stale" | "expired"
@@ -967,12 +973,14 @@ export default function WarehousePage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
+    // Only show loading spinner on first fetch (no cache)
+    if (!_warehouseCache) setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/warehouse");
       if (!res.ok) throw new Error("Failed to load");
       const json = await res.json();
+      _warehouseCache = json;
       setData(json);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");

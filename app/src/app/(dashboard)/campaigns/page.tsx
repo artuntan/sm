@@ -72,9 +72,14 @@ const STATUS_STYLES: Record<
 // Page Component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Module-level cache — instant render on revisit
+// ---------------------------------------------------------------------------
+let _campaignsCache: Campaign[] | null = null;
+
 export default function CampaignsPage() {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(_campaignsCache ?? []);
+  const [loading, setLoading] = useState(_campaignsCache === null);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("all");
 
@@ -94,7 +99,7 @@ export default function CampaignsPage() {
 
   const loadCampaigns = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!_campaignsCache) setLoading(true);
       setError(null);
       const url =
         viewMode === "all"
@@ -106,7 +111,9 @@ export default function CampaignsPage() {
         throw new Error(data.error || "Failed to load campaigns");
       }
       const data = await res.json();
-      setCampaigns(data.campaigns || []);
+      const list = data.campaigns || [];
+      _campaignsCache = list;
+      setCampaigns(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
