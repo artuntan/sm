@@ -9,7 +9,7 @@
  * - No duplicate identity rows for the same username
  */
 import { db } from "@/lib/db";
-import { influencerIdentity, creatorScanCache, creatorScanProfile } from "@/lib/db/schema";
+import { influencerIdentity, creatorScanCache, creatorScanProfile, analysisRun } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 type IdentityRow = typeof influencerIdentity.$inferSelect;
@@ -61,10 +61,16 @@ export function ensureIdentity(
 
   // ── Case 2: Both exist but are DIFFERENT rows → merge ──
   if (byIg && byTt && byIg.id !== byTt.id) {
-    // Keep the older row (or IG row), absorb the TT row's data
+    // Keep the IG row, absorb the TT row's data
     const keepRow = byIg;
     const deleteRow = byTt;
 
+    // Delete orphan FIRST to avoid UNIQUE constraint violation
+    db.delete(influencerIdentity)
+      .where(eq(influencerIdentity.id, deleteRow.id))
+      .run();
+
+    // Now safe to update the kept row with merged usernames
     db.update(influencerIdentity)
       .set({
         instagramUsername: ig,
@@ -73,11 +79,6 @@ export function ensureIdentity(
         updatedAt: now,
       })
       .where(eq(influencerIdentity.id, keepRow.id))
-      .run();
-
-    // Delete the orphan row
-    db.delete(influencerIdentity)
-      .where(eq(influencerIdentity.id, deleteRow.id))
       .run();
 
     console.log(
@@ -128,9 +129,12 @@ export function ensureIdentity(
 /**
  * Reconcile all existing scan data into proper identity rows.
  *
- * Scans creator_scan_cache and creator_scan_profile tables,
- * finds platform accounts without identity rows, and creates them.
- * Also merges split identities where possible.
+ * Two-phase approach:
+ * Phase 1: Read pair provenance from analysis_run.inputSummary — this contains
+ *          the exact {instagram, tiktok} pairs from every batch input. Call
+ *          ensureIdentity(ig, tt) for each, which will merge split rows.
+ * Phase 2: Ensure every orphan platform account (scanned but not linked)
+ *          has at least a single-platform identity row.
  *
  * Returns a summary of operations performed.
  */
@@ -140,71 +144,106 @@ export function reconcileIdentities(): {
   alreadyOk: number;
   details: string[];
 } {
-
   const details: string[] = [];
   let created = 0;
   let merged = 0;
   let alreadyOk = 0;
 
-  // Collect all unique platform:username pairs
+  // ── Phase 1: Pair provenance from analysis_run.inputSummary ──
+  // Each inputSummary is a JSON array of {instagram?, tiktok?, label?}
+  // Process most recent runs first so latest evidence takes precedence
+  const runs = db.select({ inputSummary: analysisRun.inputSummary })
+    .from(analysisRun)
+    .all()
+    .reverse();
+
+  const processedPairs = new Set<string>();
+
+  for (const run of runs) {
+    let rows: Array<{ instagram?: string; tiktok?: string }>;
+    try {
+      rows = JSON.parse(run.inputSummary);
+    } catch {
+      continue;
+    }
+
+    for (const row of rows) {
+      const ig = row.instagram?.toLowerCase().trim() || null;
+      const tt = row.tiktok?.toLowerCase().trim() || null;
+      if (!ig && !tt) continue;
+
+      const pairKey = `${ig || ""}|${tt || ""}`;
+      if (processedPairs.has(pairKey)) continue;
+      processedPairs.add(pairKey);
+
+      // Check current state before calling ensureIdentity
+      const byIg = ig
+        ? db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, ig)).get()
+        : undefined;
+      const byTt = tt
+        ? db.select().from(influencerIdentity).where(eq(influencerIdentity.tiktokUsername, tt)).get()
+        : undefined;
+
+      if (ig && tt) {
+        // Paired row — this is the key case
+        if (byIg && byTt && byIg.id === byTt.id) {
+          alreadyOk++;
+        } else if (byIg && byTt && byIg.id !== byTt.id) {
+          // Split rows exist — merge them
+          ensureIdentity(ig, tt);
+          merged++;
+          details.push(`merged: ig=${ig} + tt=${tt}`);
+        } else if (byIg || byTt) {
+          // One side exists — update with the other
+          ensureIdentity(ig, tt);
+          merged++;
+          details.push(`linked: ig=${ig} + tt=${tt}`);
+        } else {
+          // Neither exists — create paired identity
+          ensureIdentity(ig, tt);
+          created++;
+          details.push(`created pair: ig=${ig} + tt=${tt}`);
+        }
+      } else {
+        // Single-platform row
+        if (byIg || byTt) {
+          alreadyOk++;
+        } else {
+          ensureIdentity(ig, tt);
+          created++;
+          details.push(`created single: ${ig ? `ig=${ig}` : `tt=${tt}`}`);
+        }
+      }
+    }
+  }
+
+  // ── Phase 2: Orphan sweep — platform accounts not covered by any identity ──
   const allCache = db.select().from(creatorScanCache).all();
   const allProfiles = db.select().from(creatorScanProfile).all();
 
-  const platformAccounts = new Map<string, Set<string>>(); // username → Set<platform>
-  const allPairs = new Set<string>();
+  const orphanKeys = new Set<string>();
+  for (const c of allCache) orphanKeys.add(`${c.platform}:${c.username}`);
+  for (const p of allProfiles) orphanKeys.add(`${p.platform}:${p.username}`);
 
-  for (const row of [...allCache, ...allProfiles]) {
-    const key = `${row.platform}:${row.username}`;
-    if (allPairs.has(key)) continue;
-    allPairs.add(key);
-
-    const existing = platformAccounts.get(row.username) || new Set();
-    existing.add(row.platform);
-    platformAccounts.set(row.username, existing);
-  }
-
-  // For each platform account, ensure an identity exists
-  for (const [username, platforms] of platformAccounts) {
-    const ig = platforms.has("instagram") ? username : null;
-    const tt = platforms.has("tiktok") ? username : null;
+  for (const key of orphanKeys) {
+    const [platform, username] = key.split(":");
 
     // Check if this account already has an identity
-    const hasIgIdentity = ig
-      ? db
-          .select()
-          .from(influencerIdentity)
-          .where(eq(influencerIdentity.instagramUsername, ig))
-          .get()
-      : undefined;
-    const hasTtIdentity = tt
-      ? db
-          .select()
-          .from(influencerIdentity)
-          .where(eq(influencerIdentity.tiktokUsername, tt))
-          .get()
-      : undefined;
+    const hasIdentity =
+      platform === "instagram"
+        ? db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, username)).get()
+        : db.select().from(influencerIdentity).where(eq(influencerIdentity.tiktokUsername, username)).get();
 
-    if (hasIgIdentity || hasTtIdentity) {
-      // If same username has both platforms AND both have identity rows,
-      // and they're different rows, merge will happen via ensureIdentity
-      if (hasIgIdentity && hasTtIdentity && hasIgIdentity.id !== hasTtIdentity.id) {
-        ensureIdentity(ig, tt);
-        merged++;
-        details.push(`merged: ig=${ig}, tt=${tt}`);
-      } else if (ig && tt) {
-        // Same username on both platforms, one identity exists → update
-        ensureIdentity(ig, tt);
-        alreadyOk++;
-      } else {
-        alreadyOk++;
-      }
-    } else {
-      // No identity exists for this account at all → create
-      ensureIdentity(ig, tt);
-      created++;
-      details.push(`created: ${ig ? `ig=${ig}` : ""}${tt ? `tt=${tt}` : ""}`);
-    }
+    if (hasIdentity) continue;
+
+    // No identity for this orphan — create one
+    const ig = platform === "instagram" ? username : null;
+    const tt = platform === "tiktok" ? username : null;
+    ensureIdentity(ig, tt);
+    created++;
+    details.push(`orphan: ${platform}=${username}`);
   }
 
   return { created, merged, alreadyOk, details };
 }
+
