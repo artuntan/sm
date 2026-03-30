@@ -484,80 +484,165 @@ export function AppShell({
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
           title="SETTINGS"
-          width="440px"
+          width="400px"
         >
-          <div className="space-y-4">
-            {/* Profile */}
-            <div className="flex items-center gap-3 pb-4" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+          {/* ── Identity Section ── */}
+          <div style={{ marginBottom: "20px" }}>
+            <div className="flex items-center gap-3">
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0"
-                style={{ backgroundColor: "var(--accent-green-glow)", color: "var(--accent-green)", border: "2px solid var(--accent-green)" }}
+                className="w-12 h-12 rounded flex items-center justify-center text-base font-semibold shrink-0"
+                style={{
+                  backgroundColor: "var(--accent-green-glow)",
+                  color: "var(--accent-green)",
+                  border: "1px solid var(--border-accent)",
+                  fontFamily: "var(--font-mono)",
+                }}
               >
                 {(identity.name || "?")[0].toUpperCase()}
               </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>{identity.name}</p>
-                <p className="text-[10px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>{identity.email}</p>
-              </div>
-            </div>
-
-            {/* Edit Name */}
-            <div>
-              <p className="text-[10px] tracking-wider mb-2" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>DISPLAY NAME</p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="flex-1 rounded-md border px-2.5 py-1.5 text-xs bg-transparent"
-                  style={{ borderColor: "var(--border-default)", color: "var(--text-primary)" }}
-                />
-                <button
-                  onClick={handleSaveName}
-                  disabled={saving || !editName.trim() || editName.trim() === identity.name}
-                  className="px-3 py-1.5 rounded-md text-[10px] font-medium"
-                  style={{
-                    backgroundColor: (editName.trim() && editName.trim() !== identity.name) ? "var(--accent-green)" : "var(--bg-elevated)",
-                    color: (editName.trim() && editName.trim() !== identity.name) ? "var(--text-inverse)" : "var(--text-muted)",
-                    fontFamily: "var(--font-mono)",
-                    opacity: saving ? 0.6 : 1,
-                  }}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)", lineHeight: "1.3" }}>
+                  {identity.name}
+                </p>
+                <p
+                  className="text-[10px] truncate"
+                  style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", lineHeight: "1.6" }}
                 >
-                  {saving ? "..." : "SAVE"}
-                </button>
+                  {identity.email}
+                </p>
               </div>
-              {saveMsg && (
-                <p className="text-[10px] mt-1" style={{ color: saveMsg === "Saved" ? "var(--accent-green)" : "var(--accent-pink)" }}>{saveMsg}</p>
-              )}
             </div>
+          </div>
 
+          {/* ── Divider ── */}
+          <div style={{ height: "1px", backgroundColor: "var(--border-subtle)", margin: "0 0 16px 0" }} />
+
+          {/* ── Display Name Field ── */}
+          <div style={{ marginBottom: "16px" }}>
+            <p
+              className="text-[9px] tracking-wider font-medium"
+              style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: "6px" }}
+            >
+              DISPLAY NAME
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="flex-1 border px-2.5 py-1.5 text-xs"
+                style={{
+                  borderColor: "var(--border-default)",
+                  color: "var(--text-primary)",
+                  backgroundColor: "var(--bg-primary)",
+                  fontFamily: "var(--font-mono)",
+                  borderRadius: "3px",
+                  outline: "none",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "var(--accent-green)"; }}
+                onBlur={(e) => { e.target.style.borderColor = "var(--border-default)"; }}
+              />
+              <button
+                onClick={handleSaveName}
+                disabled={saving || !editName.trim() || editName.trim() === identity.name}
+                className="px-3 py-1.5 text-[9px] font-medium tracking-wider"
+                style={{
+                  backgroundColor: (editName.trim() && editName.trim() !== identity.name) ? "var(--accent-green)" : "transparent",
+                  color: (editName.trim() && editName.trim() !== identity.name) ? "var(--text-inverse)" : "var(--text-muted)",
+                  border: (editName.trim() && editName.trim() !== identity.name) ? "1px solid var(--accent-green)" : "1px solid var(--border-default)",
+                  fontFamily: "var(--font-mono)",
+                  borderRadius: "3px",
+                  cursor: (editName.trim() && editName.trim() !== identity.name) ? "pointer" : "default",
+                  opacity: saving ? 0.5 : 1,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {saving ? "···" : "SAVE"}
+              </button>
+            </div>
+            {saveMsg && (
+              <p
+                className="text-[9px] tracking-wider font-medium"
+                style={{
+                  color: saveMsg === "Saved" ? "var(--accent-green)" : "var(--accent-pink)",
+                  fontFamily: "var(--font-mono)",
+                  marginTop: "4px",
+                }}
+              >
+                {saveMsg.toUpperCase()}
+              </p>
+            )}
+          </div>
+
+          {/* ── Info Fields ── */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "16px" }}>
             {/* Team */}
             {identity.teamName && (
-              <div className="rounded-md border p-3" style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border-subtle)" }}>
-                <p className="text-[10px] tracking-wider mb-1" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>TEAM</p>
-                <p className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>{identity.teamName}</p>
+              <div className="flex items-baseline justify-between">
+                <span
+                  className="text-[9px] tracking-wider font-medium"
+                  style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+                >
+                  TEAM
+                </span>
+                <span
+                  className="text-xs font-medium"
+                  style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
+                >
+                  {identity.teamName}
+                </span>
               </div>
             )}
 
             {/* Role */}
-            <div className="rounded-md border p-3" style={{ backgroundColor: "var(--bg-secondary)", borderColor: "var(--border-subtle)" }}>
-              <p className="text-[10px] tracking-wider mb-1" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>ROLE</p>
-              <p className="text-xs font-medium" style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                {identity.systemRole === "system_admin" ? "System Admin" : "User"}
-              </p>
-            </div>
-
-            {/* Account */}
-            <div className="pt-3" style={{ borderTop: "1px solid var(--border-subtle)" }}>
-              <button
-                onClick={handleSignOut}
-                className="text-xs py-1.5 px-2 rounded-md transition-all hover:opacity-80"
-                style={{ color: "var(--accent-pink)", fontFamily: "var(--font-mono)", background: "none", border: "none", cursor: "pointer" }}
+            <div className="flex items-baseline justify-between">
+              <span
+                className="text-[9px] tracking-wider font-medium"
+                style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
               >
-                Sign Out
-              </button>
+                ROLE
+              </span>
+              <span
+                className="text-xs font-medium"
+                style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
+              >
+                {identity.systemRole === "system_admin" ? "System Admin" : "User"}
+              </span>
             </div>
           </div>
+
+          {/* ── Divider ── */}
+          <div style={{ height: "1px", backgroundColor: "var(--border-subtle)", margin: "0 0 12px 0" }} />
+
+          {/* ── Sign Out ── */}
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-2 w-full text-left py-2 px-1 transition-all"
+            style={{
+              color: "var(--text-muted)",
+              fontFamily: "var(--font-mono)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              borderRadius: "3px",
+              fontSize: "10px",
+              letterSpacing: "0.05em",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--accent-pink)";
+              e.currentTarget.style.backgroundColor = "rgba(255,100,130,0.06)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--text-muted)";
+              e.currentTarget.style.backgroundColor = "transparent";
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M4.5 10.5H2.5a1 1 0 01-1-1v-7a1 1 0 011-1h2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+              <path d="M8 8.5l2.5-2.5L8 3.5M5 6h5.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>SIGN OUT</span>
+          </button>
         </Modal>
       )}
     </div>
