@@ -91,6 +91,10 @@ export default function CampaignsPage() {
     useState<CampaignWithCreators | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // Pagination
+  const [campPage, setCampPage] = useState(1);
+  const CAMP_PAGE_SIZE = 8;
+
   // ── Load campaigns ────────────────────────────────────────────────────────
 
   const loadCampaigns = useCallback(async () => {
@@ -211,6 +215,13 @@ export default function CampaignsPage() {
     if (viewMode === "all") return true;
     return toUserStatus(c.status) === viewMode;
   });
+
+  const campTotalPages = Math.max(1, Math.ceil(filteredCampaigns.length / CAMP_PAGE_SIZE));
+  const campSafePage = Math.min(campPage, campTotalPages);
+  const pagedCampaigns = filteredCampaigns.slice((campSafePage - 1) * CAMP_PAGE_SIZE, campSafePage * CAMP_PAGE_SIZE);
+
+  // Reset page on filter change
+  useEffect(() => { setCampPage(1); }, [viewMode]);
 
   // ── Brand labels ──────────────────────────────────────────────────────────
 
@@ -408,9 +419,9 @@ export default function CampaignsPage() {
       )}
 
       {/* ── Campaign List ── */}
-      {!loading && filteredCampaigns.length > 0 && (
+      {!loading && pagedCampaigns.length > 0 && (
         <div className="space-y-2">
-          {filteredCampaigns.map((camp) => {
+          {pagedCampaigns.map((camp) => {
             const us = toUserStatus(camp.status);
             const style = USER_STATUS_STYLE[us];
             const isSelected = selectedCampaign?.id === camp.id;
@@ -530,6 +541,86 @@ export default function CampaignsPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Campaigns Pagination ── */}
+      {!loading && filteredCampaigns.length > 0 && campTotalPages > 1 && (
+        <div
+          style={{
+            marginTop: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "8px",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "10px",
+              color: "var(--text-muted)",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            Showing {(campSafePage - 1) * CAMP_PAGE_SIZE + 1}–{Math.min(campSafePage * CAMP_PAGE_SIZE, filteredCampaigns.length)} of {filteredCampaigns.length}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+            <button
+              onClick={() => setCampPage(p => Math.max(1, p - 1))}
+              disabled={campSafePage <= 1}
+              style={{
+                padding: "3px 8px",
+                fontSize: "10px",
+                fontFamily: "var(--font-mono)",
+                color: campSafePage <= 1 ? "var(--text-muted)" : "var(--text-secondary)",
+                backgroundColor: "transparent",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "4px",
+                cursor: campSafePage <= 1 ? "default" : "pointer",
+                opacity: campSafePage <= 1 ? 0.4 : 1,
+              }}
+            >
+              ‹
+            </button>
+            {Array.from({ length: campTotalPages }, (_, i) => i + 1).map(p => (
+              <button
+                key={p}
+                onClick={() => setCampPage(p)}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "10px",
+                  fontFamily: "var(--font-mono)",
+                  fontWeight: p === campSafePage ? 600 : 400,
+                  color: p === campSafePage ? "var(--text-primary)" : "var(--text-muted)",
+                  backgroundColor: p === campSafePage ? "var(--bg-elevated)" : "transparent",
+                  border: p === campSafePage ? "1px solid var(--border-default)" : "1px solid transparent",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  minWidth: "28px",
+                }}
+              >
+                {p}
+              </button>
+            ))}
+            <button
+              onClick={() => setCampPage(p => Math.min(campTotalPages, p + 1))}
+              disabled={campSafePage >= campTotalPages}
+              style={{
+                padding: "3px 8px",
+                fontSize: "10px",
+                fontFamily: "var(--font-mono)",
+                color: campSafePage >= campTotalPages ? "var(--text-muted)" : "var(--text-secondary)",
+                backgroundColor: "transparent",
+                border: "1px solid var(--border-subtle)",
+                borderRadius: "4px",
+                cursor: campSafePage >= campTotalPages ? "default" : "pointer",
+                opacity: campSafePage >= campTotalPages ? 0.4 : 1,
+              }}
+            >
+              ›
+            </button>
+          </div>
         </div>
       )}
 

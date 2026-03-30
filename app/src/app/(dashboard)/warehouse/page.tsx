@@ -971,6 +971,8 @@ export default function WarehousePage() {
   >("all");
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 8;
 
   const fetchData = useCallback(async () => {
     // Only show loading spinner on first fetch (no cache)
@@ -1009,6 +1011,13 @@ export default function WarehousePage() {
     }
     return true;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Reset page when filters/search change
+  useEffect(() => { setPage(1); setExpandedId(null); }, [filter, search]);
 
   return (
     <div>
@@ -1209,9 +1218,9 @@ export default function WarehousePage() {
       )}
 
       {/* ═══════════ COMPACT: Card Layout (<768px) ═══════════ */}
-      {compact && filtered.length > 0 && (
+      {compact && paged.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {filtered.map((identity) => (
+          {paged.map((identity) => (
             <CreatorCard
               key={identity.id}
               identity={identity}
@@ -1223,7 +1232,7 @@ export default function WarehousePage() {
       )}
 
       {/* ═══════════ TABLE: Desktop Layout (≥768px) ═══════════ */}
-      {!compact && filtered.length > 0 && (
+      {!compact && paged.length > 0 && (
         <div
           style={{
             border: "1px solid var(--border-subtle)",
@@ -1278,7 +1287,7 @@ export default function WarehousePage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((identity, i) => {
+              {paged.map((identity, i) => {
                 const isExpanded = expandedId === identity.id;
                 const bestPic = identity.platforms.find(
                   (p) => p.profilePicUrl
@@ -1313,7 +1322,7 @@ export default function WarehousePage() {
                       style={{
                         borderBottom: isExpanded
                           ? "none"
-                          : i < filtered.length - 1
+                          : i < paged.length - 1
                             ? "1px solid var(--border-subtle)"
                             : "none",
                         cursor: "pointer",
@@ -1593,23 +1602,86 @@ export default function WarehousePage() {
       )}
 
       {/* Footer */}
+      {/* Pagination + Footer */}
       {filtered.length > 0 && (
         <div
           style={{
-            marginTop: "8px",
-            fontSize: "10px",
-            color: "var(--text-muted)",
-            fontFamily: "var(--font-mono)",
+            marginTop: "12px",
             display: "flex",
+            alignItems: "center",
             justifyContent: "space-between",
             flexWrap: "wrap",
-            gap: "4px",
+            gap: "8px",
           }}
         >
-          <span>
-            Showing {filtered.length} of {data?.totalCount ?? 0} creators
+          <span
+            style={{
+              fontSize: "10px",
+              color: "var(--text-muted)",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length} creators
           </span>
-          <span>Auto-refreshes every 30s</span>
+
+          {totalPages > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+              <button
+                onClick={() => { setPage(p => Math.max(1, p - 1)); setExpandedId(null); }}
+                disabled={safePage <= 1}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "10px",
+                  fontFamily: "var(--font-mono)",
+                  color: safePage <= 1 ? "var(--text-muted)" : "var(--text-secondary)",
+                  backgroundColor: "transparent",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "4px",
+                  cursor: safePage <= 1 ? "default" : "pointer",
+                  opacity: safePage <= 1 ? 0.4 : 1,
+                }}
+              >
+                ‹
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                <button
+                  key={p}
+                  onClick={() => { setPage(p); setExpandedId(null); }}
+                  style={{
+                    padding: "3px 8px",
+                    fontSize: "10px",
+                    fontFamily: "var(--font-mono)",
+                    fontWeight: p === safePage ? 600 : 400,
+                    color: p === safePage ? "var(--text-primary)" : "var(--text-muted)",
+                    backgroundColor: p === safePage ? "var(--bg-elevated)" : "transparent",
+                    border: p === safePage ? "1px solid var(--border-default)" : "1px solid transparent",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    minWidth: "28px",
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+              <button
+                onClick={() => { setPage(p => Math.min(totalPages, p + 1)); setExpandedId(null); }}
+                disabled={safePage >= totalPages}
+                style={{
+                  padding: "3px 8px",
+                  fontSize: "10px",
+                  fontFamily: "var(--font-mono)",
+                  color: safePage >= totalPages ? "var(--text-muted)" : "var(--text-secondary)",
+                  backgroundColor: "transparent",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "4px",
+                  cursor: safePage >= totalPages ? "default" : "pointer",
+                  opacity: safePage >= totalPages ? 0.4 : 1,
+                }}
+              >
+                ›
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
