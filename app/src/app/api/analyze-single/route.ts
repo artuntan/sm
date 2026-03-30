@@ -9,6 +9,7 @@
  * Shares the analyzePlatform() logic with /api/analyze-all.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { ensureIdentity } from "@/lib/services/identity-service";
 import { z } from "zod";
 import { normalizeUsername } from "@/lib/domain/normalize";
 import { selectDualBenchmark, selectDualBenchmarkFromItems } from "@/lib/domain/selection";
@@ -32,6 +33,8 @@ const AnalyzeSingleSchema = z.object({
     .min(1, "Username is required")
     .max(100, "Username is too long"),
   forceRefresh: z.boolean().optional().default(false),
+  /** Paired username on the OTHER platform (for identity linking) */
+  pairedWith: z.string().min(1).optional(),
 });
 
 function validateUsername(username: string, platform: Platform): string | null {
@@ -218,8 +221,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { platform, username } = parseResult.data;
+  const { platform, username, pairedWith } = parseResult.data;
   const result = await analyzePlatform(platform, username, parseResult.data.forceRefresh);
+
+  // ── Server-side identity linking ──
+  // When pair context is provided, create/update identity at write time
+  // This ensures identity rows exist before the warehouse reads them
+  try {
+    const ig = platform === "instagram" ? username.toLowerCase().trim() : (pairedWith?.toLowerCase().trim() || null);
+    const tt = platform === "tiktok" ? username.toLowerCase().trim() : (pairedWith?.toLowerCase().trim() || null);
+    // Always call ensureIdentity — even for single-platform (ig or tt alone)
+    ensureIdentity(ig, tt);
+  } catch (err) {
+    // Identity linking failure should not fail the analyze response
+    console.error("[analyze-single] Identity linking error:", err);
+  }
 
   // Logical analysis failures get HTTP 502 — the fetch succeeded but the
   // platform analysis itself failed (provider error, memory limit, etc.)

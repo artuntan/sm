@@ -108,12 +108,13 @@ function categoryLabel(
 async function fetchPlatformAnalysis(
   platform: Platform,
   username: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  pairedWith?: string
 ): Promise<PlatformAnalysis> {
   const res = await fetch("/api/analyze-single", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ platform, username }),
+    body: JSON.stringify({ platform, username, ...(pairedWith ? { pairedWith } : {}) }),
     signal,
   });
 
@@ -394,10 +395,27 @@ export default function Home() {
     setPhase("processing");
     setSelectedRowId(null);
 
+    // Build pair-lookup maps: for each handle, find the paired username on the other platform
+    const pairLookup = new Map<string, string>();
+    for (const row of result.rows) {
+      if (row.instagramUsername && row.tiktokUsername) {
+        // IG handle → paired TT username
+        pairLookup.set(`instagram:${row.instagramUsername}`, row.tiktokUsername);
+        // TT handle → paired IG username
+        pairLookup.set(`tiktok:${row.tiktokUsername}`, row.instagramUsername);
+      }
+    }
+
+    // Wrap fetchPlatformAnalysis with pair context
+    const fetchWithPairContext = (platform: Platform, username: string, signal?: AbortSignal) => {
+      const pairedWith = pairLookup.get(`${platform}:${username}`);
+      return fetchPlatformAnalysis(platform, username, signal, pairedWith);
+    };
+
     const queueHandle = runBatchQueue(
       result.rows,
       jobs,
-      fetchPlatformAnalysis,
+      fetchWithPairContext,
       {
         onUpdate: () => {
           setHandleJobs(jobs);
