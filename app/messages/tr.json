@@ -46,7 +46,10 @@
     "theme": "Tema",
     "dark": "Koyu",
     "light": "Açık",
-    "system": "Sistem"
+    "system": "Sistem",
+    "language": "Dil",
+    "en": "İngilizce",
+    "tr": "Türkçe"
   },
   "workspace": {
     "title": "İçerik Üretici Analizi",

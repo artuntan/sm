@@ -46,7 +46,10 @@
     "theme": "Theme",
     "dark": "Dark",
     "light": "Light",
-    "system": "System"
+    "system": "System",
+    "language": "Language",
+    "en": "English",
+    "tr": "Turkish"
   },
   "workspace": {
     "title": "Creator Analysis",

@@ -11,8 +11,9 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { usePathname, useRouter } from "next/navigation";
+import { locales, type Locale } from "@/i18n/config";
 import Link from "next/link";
 import { Modal } from "@/app/components/ui/Modal";
 import { ProductFooter } from "@/app/components/ui/ProductFooter";
@@ -148,6 +149,12 @@ export function AppShell({
   const [editName, setEditName] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const currentLocale = useLocale() as Locale;
+
+  const setLocale = useCallback((locale: Locale) => {
+    document.cookie = `locale=${locale};path=/;max-age=${365 * 24 * 60 * 60}`;
+    router.refresh();
+  }, [router]);
 
   // ── Fetch identity — stale-while-revalidate ──────────────────────────────
   useEffect(() => {
@@ -445,6 +452,26 @@ export function AppShell({
                             aria-checked={prefs.theme === themeOpt}
                           >
                             {t(themeOpt)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Language section */}
+                  <div className="account-menu-section">
+                    <span className="account-menu-section-label">{t("language").toUpperCase()}</span>
+                    <div className="account-menu-toggle-row">
+                      <div className="account-toggle-group">
+                        {locales.map((loc) => (
+                          <button
+                            key={loc}
+                            className={`account-toggle-btn ${currentLocale === loc ? "active" : ""}`}
+                            onClick={() => setLocale(loc)}
+                            role="menuitemradio"
+                            aria-checked={currentLocale === loc}
+                          >
+                            {t(loc)}
                           </button>
                         ))}
                       </div>
