@@ -7,6 +7,7 @@
  */
 import { requireApproved } from "@/lib/auth/guards";
 import { NextRequest, NextResponse } from "next/server";
+import { internalError } from "@/lib/api-error";
 import { db } from "@/lib/db";
 import {
   creatorScanCache,
@@ -302,9 +303,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error("[warehouse] Error:", err);
-    return NextResponse.json(
-      { error: "Failed to load warehouse data" },
-      { status: 500 }
-    );
+    return internalError("Failed to load warehouse data.");
   }
 }

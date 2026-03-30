@@ -6,6 +6,7 @@
 
 import { requireApproved } from "@/lib/auth/guards";
 import { NextResponse } from "next/server";
+import { internalError } from "@/lib/api-error";
 import { getAllBrands, PLATFORM_ACCESS } from "@/lib/dimes/accounts";
 
 export async function GET() {
@@ -36,9 +37,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[Dimes Brands]", error);
-    return NextResponse.json(
-      { error: "Failed to list brands" },
-      { status: 500 }
-    );
+    return internalError("Failed to list brands.");
   }
 }

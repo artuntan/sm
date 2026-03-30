@@ -23,6 +23,7 @@
 import { requireApproved } from "@/lib/auth/guards";
 import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
+import { internalError } from "@/lib/api-error";
 import {
   executeScanRun,
   getDailyScanConfig,
@@ -248,10 +249,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("[Dimes Scan]", error);
-    return NextResponse.json(
-      { error: "Scan failed", details: error instanceof Error ? error.message : "unknown" },
-      { status: 500 }
-    );
+    return internalError("Scan failed.");
   }
 }
 
@@ -276,9 +274,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[Dimes Scan Config]", error);
-    return NextResponse.json(
-      { error: "Failed to get scan config" },
-      { status: 500 }
-    );
+    return internalError("Failed to get scan config.");
   }
 }

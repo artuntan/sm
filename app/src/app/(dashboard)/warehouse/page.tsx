@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback, Fragment } from "react";
+import { formatNumber, formatDate, truncate } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -140,13 +141,6 @@ function timeUntil(isoDate: string): string {
   return `${days}d`;
 }
 
-function formatNumber(n: number | null | undefined): string {
-  if (n === null || n === undefined) return "–";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toString();
-}
-
 function freshnessColor(f: string): string {
   if (f === "fresh") return "var(--accent-green)";
   if (f === "stale") return "var(--accent-amber)";
@@ -161,18 +155,6 @@ function statusColor(s: string): string {
   if (s === "complete") return "var(--accent-green)";
   if (s === "partial") return "var(--accent-amber)";
   return "var(--text-muted)";
-}
-
-function truncate(s: string | null, max: number): string {
-  if (!s) return "No caption";
-  return s.length > max ? s.substring(0, max) + "…" : s;
-}
-
-function formatDate(iso: string): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } catch { return "—"; }
 }
 
 function categoryLabel(cat: string | null): string {

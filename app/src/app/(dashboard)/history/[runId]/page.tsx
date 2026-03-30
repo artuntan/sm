@@ -16,8 +16,8 @@ import {
   BenchmarkPanel,
   VisibilityIntelligencePanel,
   BudgetWorkbench,
-  formatNumber,
 } from "@/app/components/DetailPanels";
+import { formatNumber } from "@/lib/format";
 import { SkeletonCard, SkeletonStats } from "@/app/components/ui/Skeleton";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 

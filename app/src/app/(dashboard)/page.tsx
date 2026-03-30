@@ -9,7 +9,6 @@ import type {
   ComparisonMetrics,
   PlatformAnalysis,
   ProfileSummary,
-  ProviderSource,
   StoryVisibility,
   CarouselVisibility,
   DeliverableType,
@@ -19,6 +18,7 @@ import type {
   QuoteSourceMode,
   Platform,
 } from "@/lib/domain/types";
+import { formatNumber, formatDate, truncate, sourceLabel } from "@/lib/format";
 import {
   DELIVERABLE_LABELS,
   moneyWithFx,
@@ -52,39 +52,8 @@ import { Modal } from "@/app/components/ui/Modal";
 
 
 // ---------------------------------------------------------------------------
-// Formatters
+// Formatters — imported from @/lib/format
 // ---------------------------------------------------------------------------
-
-function formatNumber(n: number | null | undefined): string {
-  if (n === null || n === undefined) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
-}
-
-function formatDate(ts: string): string {
-  return new Date(ts).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function truncate(text: string | null, max = 80): string {
-  if (!text) return "No caption";
-  return text.length <= max ? text : text.slice(0, max) + "…";
-}
-
-function sourceLabel(source: ProviderSource): string {
-  const map: Record<string, string> = {
-    meta: "Meta API",
-    mock: "Mock",
-    "instagram-apify": "Apify Fallback",
-    "tiktok-research": "Research API",
-    "tiktok-apify": "Apify Live",
-    "tiktok-mock": "Mock",
-  };
-  return map[source] || source;
-}
 
 function categoryLabel(
   cat: ClassifiedReel["classificationCategory"] | ClassifiedItem["classificationCategory"]

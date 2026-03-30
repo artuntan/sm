@@ -15,6 +15,7 @@
 
 import { requireApproved } from "@/lib/auth/guards";
 import { NextResponse } from "next/server";
+import { notFound, internalError } from "@/lib/api-error";
 import { getAllBrands, getBrandBySlug } from "@/lib/dimes/accounts";
 import * as repo from "@/lib/dimes/repository";
 import { buildClusters } from "@/lib/dimes/clustering";
@@ -36,10 +37,7 @@ export async function GET(request: Request) {
       : getAllBrands();
 
     if (brands.length === 0) {
-      return NextResponse.json(
-        { error: "Brand not found" },
-        { status: 404 }
-      );
+      return notFound("Brand not found.");
     }
 
     // Read all posts from DB
@@ -160,9 +158,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[Dimes Report]", error);
-    return NextResponse.json(
-      { error: "Failed to generate report" },
-      { status: 500 }
-    );
+    return internalError("Failed to generate report.");
   }
 }
