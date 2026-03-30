@@ -77,6 +77,8 @@
 
   /* Brand — type of */
   --typeof-brand: #b0b8c4;
+  --typeof-descriptor: #6b7280;
+  --typeof-descriptor-border: #2e3440;
 }
 
 /* ---------------------------------------------------------------------------
@@ -129,6 +131,8 @@
 
   /* Brand — type of */
   --typeof-brand: #505860;
+  --typeof-descriptor: #8b919a;
+  --typeof-descriptor-border: #d0d5dc;
 }
 
 /* System theme — mirrors light tokens when OS is light */
@@ -171,6 +175,8 @@
 
     /* Brand — type of */
     --typeof-brand: #505860;
+    --typeof-descriptor: #8b919a;
+    --typeof-descriptor-border: #d0d5dc;
   }
 }
 

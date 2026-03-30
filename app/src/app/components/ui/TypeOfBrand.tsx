@@ -4,10 +4,13 @@
  * TypeOfBrand — Logo + product descriptor for "type of"
  *
  * Uses actual SVG logo files, theme-switched via CSS:
- *   Dark mode → /logo-dark.svg  (white logo)
- *   Light mode → /logo-light.svg (gray logo)
+ *   Dark mode → /logo-light.svg  (lighter/gray logo for dark surfaces)
+ *   Light mode → /logo-dark.svg  (darker logo for light surfaces)
  *
- * Includes a small "marketing" product descriptor badge
+ * Note: file naming reflects the ORIGINAL source names (whitemode/darkmode),
+ * not the display context. The CSS rules in globals.css handle the switching.
+ *
+ * Includes a small "marketing" product descriptor capsule
  * so users understand this is type of's marketing tool.
  */
 
@@ -44,7 +47,7 @@ export function TypeOfMark({
         ...style,
       }}
     >
-      {/* Dark mode logo (white) */}
+      {/* logo-dark.svg = darker variant (shown in light mode via CSS) */}
       <img
         src="/logo-dark.svg"
         alt="type of"
@@ -61,7 +64,7 @@ export function TypeOfMark({
         }}
         draggable={false}
       />
-      {/* Light mode logo (gray) */}
+      {/* logo-light.svg = lighter variant (shown in dark mode via CSS) */}
       <img
         src="/logo-light.svg"
         alt="type of"
@@ -83,7 +86,7 @@ export function TypeOfMark({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Full brand lockup: Logo + product descriptor badge                */
+/*  Full brand lockup: Logo + product descriptor capsule              */
 /* ------------------------------------------------------------------ */
 
 export function TypeOfBrandLockup({
@@ -101,7 +104,7 @@ export function TypeOfBrandLockup({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 7,
+        gap: 8,
         flexShrink: 0,
         ...style,
       }}
@@ -114,12 +117,11 @@ export function TypeOfBrandLockup({
           fontWeight: 600,
           letterSpacing: "0.1em",
           textTransform: "uppercase" as const,
-          color: "var(--text-muted)",
-          opacity: 0.4,
+          color: "var(--typeof-descriptor)",
           lineHeight: 1,
-          border: "1px solid var(--border-subtle)",
+          border: "1px solid var(--typeof-descriptor-border)",
           borderRadius: 3,
-          padding: "2.5px 5px 2px",
+          padding: "3px 5px 2px",
           whiteSpace: "nowrap",
         }}
       >
