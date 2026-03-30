@@ -101,7 +101,7 @@ export function TypeOfBrandLockup({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
+        gap: 7,
         flexShrink: 0,
         ...style,
       }}
@@ -109,15 +109,17 @@ export function TypeOfBrandLockup({
       <TypeOfMark size={logoSize} />
       <span
         style={{
-          fontSize: 9,
+          fontSize: 8,
           fontFamily: "var(--font-mono)",
-          fontWeight: 500,
-          letterSpacing: "0.06em",
+          fontWeight: 600,
+          letterSpacing: "0.1em",
+          textTransform: "uppercase" as const,
           color: "var(--text-muted)",
-          opacity: 0.6,
+          opacity: 0.4,
           lineHeight: 1,
-          borderLeft: "1px solid var(--border-subtle)",
-          paddingLeft: 6,
+          border: "1px solid var(--border-subtle)",
+          borderRadius: 3,
+          padding: "2.5px 5px 2px",
           whiteSpace: "nowrap",
         }}
       >
