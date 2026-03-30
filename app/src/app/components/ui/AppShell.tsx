@@ -15,7 +15,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Modal } from "@/app/components/ui/Modal";
 import { ProductFooter } from "@/app/components/ui/ProductFooter";
-import { TypeOfMark } from "@/app/components/ui/TypeOfBrand";
+import { TypeOfBrandLockup } from "@/app/components/ui/TypeOfBrand";
 import type { ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
@@ -281,7 +281,7 @@ export function AppShell({
           {/* Left: Logo + Scrollable Tabs */}
           <div className="flex items-center gap-0.5 min-w-0 flex-1">
             <Link href="/" className="flex items-center mr-3 shrink-0">
-              <TypeOfMark size={20} />
+              <TypeOfBrandLockup logoSize={18} />
             </Link>
 
             <nav className="shell-nav-scroll">

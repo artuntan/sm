@@ -175,6 +175,24 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Brand logo theme switching
+   --------------------------------------------------------------------------- */
+
+/* Default (dark mode): show white logo, hide gray one */
+.typeof-logo-dark { display: block !important; }
+.typeof-logo-light { display: none !important; }
+
+/* Light mode: show gray logo, hide white one */
+[data-theme="light"] .typeof-logo-dark { display: none !important; }
+[data-theme="light"] .typeof-logo-light { display: block !important; }
+
+/* System theme — light OS */
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] .typeof-logo-dark { display: none !important; }
+  [data-theme="system"] .typeof-logo-light { display: block !important; }
+}
+
+/* ---------------------------------------------------------------------------
    Base
    --------------------------------------------------------------------------- */
 
