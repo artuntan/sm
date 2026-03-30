@@ -60,10 +60,10 @@ export type FrequencyTier = ScanProfile["frequencyTier"];
 /**
  * Get the adaptive TTL for a creator. Returns the default if no profile exists.
  */
-export function getAdaptiveTtl(platform: Platform, username: string): number {
+export async function getAdaptiveTtl(platform: Platform, username: string): Promise<number> {
   const normalizedUsername = username.toLowerCase().trim();
 
-  const row = db
+  const rows = await db
     .select({ adaptiveTtlMs: creatorScanProfile.adaptiveTtlMs })
     .from(creatorScanProfile)
     .where(
@@ -72,7 +72,8 @@ export function getAdaptiveTtl(platform: Platform, username: string): number {
         eq(creatorScanProfile.username, normalizedUsername)
       )
     )
-    .get();
+    .limit(1);
+  const row = rows[0];
 
   return row?.adaptiveTtlMs ?? TTL_DEFAULT;
 }
@@ -80,13 +81,13 @@ export function getAdaptiveTtl(platform: Platform, username: string): number {
 /**
  * Get the full scan profile for a creator. Returns null if never scanned.
  */
-export function getScanProfile(
+export async function getScanProfile(
   platform: Platform,
   username: string
-): ScanProfile | null {
+): Promise<ScanProfile | null> {
   const normalizedUsername = username.toLowerCase().trim();
 
-  const row = db
+  const rows = await db
     .select()
     .from(creatorScanProfile)
     .where(
@@ -95,7 +96,8 @@ export function getScanProfile(
         eq(creatorScanProfile.username, normalizedUsername)
       )
     )
-    .get();
+    .limit(1);
+  const row = rows[0];
 
   if (!row) return null;
 
@@ -118,16 +120,16 @@ export function getScanProfile(
  * Update the scan profile after a successful scan.
  * Computes posting frequency from warehouse items and derives adaptive TTL.
  */
-export function updateScanProfile(
+export async function updateScanProfile(
   platform: Platform,
   username: string,
   providerResult: ProviderResult
-): ScanProfile {
+): Promise<ScanProfile> {
   const normalizedUsername = username.toLowerCase().trim();
   const now = new Date().toISOString();
 
   // Get all items from warehouse to compute frequency
-  const warehouseItems = db
+  const warehouseItems = await db
     .select({
       publishedAt: creatorMediaItem.publishedAt,
     })
@@ -138,8 +140,7 @@ export function updateScanProfile(
         eq(creatorMediaItem.username, normalizedUsername)
       )
     )
-    .orderBy(desc(creatorMediaItem.publishedAt))
-    .all();
+    .orderBy(desc(creatorMediaItem.publishedAt));
 
   // Compute posting frequency
   const postsPerWeek = computePostsPerWeek(
@@ -157,7 +158,7 @@ export function updateScanProfile(
     : null;
 
   // Upsert profile
-  const existing = db
+  const existingRows = await db
     .select({ id: creatorScanProfile.id, scanCount: creatorScanProfile.scanCount, firstScanAt: creatorScanProfile.firstScanAt })
     .from(creatorScanProfile)
     .where(
@@ -166,7 +167,8 @@ export function updateScanProfile(
         eq(creatorScanProfile.username, normalizedUsername)
       )
     )
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   const profileData = {
     totalItemsSeen: warehouseItems.length,
@@ -176,28 +178,24 @@ export function updateScanProfile(
     lastScanAt: now,
     latestPostAt,
     earliestPostAt,
-    profileSnapshotJson: providerResult.profile
-      ? JSON.stringify(providerResult.profile)
-      : null,
+    profileSnapshotJson: providerResult.profile ?? null,
     updatedAt: now,
   };
 
   if (existing) {
-    db.update(creatorScanProfile)
+    await db.update(creatorScanProfile)
       .set(profileData)
-      .where(eq(creatorScanProfile.id, existing.id))
-      .run();
+      .where(eq(creatorScanProfile.id, existing.id));
   } else {
     const id = `sp_${platform}_${normalizedUsername}_${Date.now()}`;
-    db.insert(creatorScanProfile)
+    await db.insert(creatorScanProfile)
       .values({
         id,
         platform,
         username: normalizedUsername,
         firstScanAt: now,
         ...profileData,
-      })
-      .run();
+      });
   }
 
   return {

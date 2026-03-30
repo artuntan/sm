@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
 
   // Check durable cache (unless force refresh)
   if (!forceRefresh) {
-    const cached = getCachedProviderResult(platform, username);
+    const cached = await getCachedProviderResult(platform, username);
     if (cached) {
       // Re-run benchmark pipeline on cached raw items (always uses latest code)
       let benchmark;
@@ -203,13 +203,13 @@ export async function POST(request: NextRequest) {
     };
 
     // Cache the raw provider result durably
-    cacheProviderResult(platform, username, providerResult);
+    await cacheProviderResult(platform, username, providerResult);
 
     // M2: Persist items to warehouse
-    ingestContentItems(providerResult.items, platform, username);
+    await ingestContentItems(providerResult.items, platform, username);
 
     // M3: Update scan profile
-    updateScanProfile(platform, username, providerResult);
+    await updateScanProfile(platform, username, providerResult);
 
     return NextResponse.json(result);
   } catch (err) {

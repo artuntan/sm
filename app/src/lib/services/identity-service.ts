@@ -24,10 +24,10 @@ type IdentityRow = typeof influencerIdentity.$inferSelect;
  *
  * Returns the canonical identity ID.
  */
-export function ensureIdentity(
+export async function ensureIdentity(
   instagramUsername?: string | null,
   tiktokUsername?: string | null
-): string {
+): Promise<string> {
   const ig = instagramUsername?.toLowerCase().trim() || null;
   const tt = tiktokUsername?.toLowerCase().trim() || null;
 
@@ -38,21 +38,23 @@ export function ensureIdentity(
   const now = new Date().toISOString();
 
   // Find existing identities for each platform
-  const byIg: IdentityRow | undefined = ig
-    ? db
+  const byIgRows = ig
+    ? await db
         .select()
         .from(influencerIdentity)
         .where(eq(influencerIdentity.instagramUsername, ig))
-        .get()
-    : undefined;
+        .limit(1)
+    : [];
+  const byIg: IdentityRow | undefined = byIgRows[0];
 
-  const byTt: IdentityRow | undefined = tt
-    ? db
+  const byTtRows = tt
+    ? await db
         .select()
         .from(influencerIdentity)
         .where(eq(influencerIdentity.tiktokUsername, tt))
-        .get()
-    : undefined;
+        .limit(1)
+    : [];
+  const byTt: IdentityRow | undefined = byTtRows[0];
 
   // ── Case 1: Both exist and are the SAME row → already merged ──
   if (byIg && byTt && byIg.id === byTt.id) {
@@ -61,25 +63,22 @@ export function ensureIdentity(
 
   // ── Case 2: Both exist but are DIFFERENT rows → merge ──
   if (byIg && byTt && byIg.id !== byTt.id) {
-    // Keep the IG row, absorb the TT row's data
     const keepRow = byIg;
     const deleteRow = byTt;
 
     // Delete orphan FIRST to avoid UNIQUE constraint violation
-    db.delete(influencerIdentity)
-      .where(eq(influencerIdentity.id, deleteRow.id))
-      .run();
+    await db.delete(influencerIdentity)
+      .where(eq(influencerIdentity.id, deleteRow.id));
 
     // Now safe to update the kept row with merged usernames
-    db.update(influencerIdentity)
+    await db.update(influencerIdentity)
       .set({
         instagramUsername: ig,
         tiktokUsername: tt,
         displayName: keepRow.displayName || ig || tt,
         updatedAt: now,
       })
-      .where(eq(influencerIdentity.id, keepRow.id))
-      .run();
+      .where(eq(influencerIdentity.id, keepRow.id));
 
     console.log(
       `[identity] Merged split identities: kept=${keepRow.id}, deleted=${deleteRow.id} → ig=${ig}, tt=${tt}`
@@ -91,10 +90,9 @@ export function ensureIdentity(
   // ── Case 3: Only IG identity exists → update with TT if provided ──
   if (byIg && !byTt) {
     if (tt) {
-      db.update(influencerIdentity)
+      await db.update(influencerIdentity)
         .set({ tiktokUsername: tt, updatedAt: now })
-        .where(eq(influencerIdentity.id, byIg.id))
-        .run();
+        .where(eq(influencerIdentity.id, byIg.id));
     }
     return byIg.id;
   }
@@ -102,17 +100,16 @@ export function ensureIdentity(
   // ── Case 4: Only TT identity exists → update with IG if provided ──
   if (!byIg && byTt) {
     if (ig) {
-      db.update(influencerIdentity)
+      await db.update(influencerIdentity)
         .set({ instagramUsername: ig, updatedAt: now })
-        .where(eq(influencerIdentity.id, byTt.id))
-        .run();
+        .where(eq(influencerIdentity.id, byTt.id));
     }
     return byTt.id;
   }
 
   // ── Case 5: No identity exists → create new ──
   const id = `identity_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  db.insert(influencerIdentity)
+  await db.insert(influencerIdentity)
     .values({
       id,
       instagramUsername: ig,
@@ -120,11 +117,11 @@ export function ensureIdentity(
       displayName: ig || tt,
       createdAt: now,
       updatedAt: now,
-    })
-    .run();
+    });
 
   return id;
 }
+
 /**
  * Reconcile all existing scan data into proper identity rows.
  *
@@ -138,13 +135,13 @@ export function ensureIdentity(
  *
  * Returns a summary of operations performed.
  */
-export function reconcileIdentities(): {
+export async function reconcileIdentities(): Promise<{
   created: number;
   merged: number;
   alreadyOk: number;
   skipped: number;
   details: string[];
-} {
+}> {
   const details: string[] = [];
   let created = 0;
   let merged = 0;
@@ -152,16 +149,13 @@ export function reconcileIdentities(): {
   let skipped = 0;
 
   // ── Phase 1: Collect pair evidence and compute majority vote ──
-  // For each IG handle, tally how many runs pair it with each TT handle
   const igToTtVotes = new Map<string, Map<string, number>>();
-  // For each TT handle, tally how many runs pair it with each IG handle
   const ttToIgVotes = new Map<string, Map<string, number>>();
-  // Track all handles that have real scan data
   const scannedIg = new Set<string>();
   const scannedTt = new Set<string>();
 
-  const allCache = db.select().from(creatorScanCache).all();
-  const allProfiles = db.select().from(creatorScanProfile).all();
+  const allCache = await db.select().from(creatorScanCache);
+  const allProfiles = await db.select().from(creatorScanProfile);
   for (const c of allCache) {
     if (c.platform === "instagram") scannedIg.add(c.username);
     if (c.platform === "tiktok") scannedTt.add(c.username);
@@ -171,23 +165,19 @@ export function reconcileIdentities(): {
     if (p.platform === "tiktok") scannedTt.add(p.username);
   }
 
-  const runs = db.select({ inputSummary: analysisRun.inputSummary }).from(analysisRun).all();
+  // inputSummary is now jsonb — no JSON.parse needed
+  const runs = await db.select({ inputSummary: analysisRun.inputSummary }).from(analysisRun);
 
   for (const run of runs) {
-    let rows: Array<{ instagram?: string; tiktok?: string }>;
-    try {
-      rows = JSON.parse(run.inputSummary);
-    } catch {
-      continue;
-    }
+    const rows = run.inputSummary as Array<{ instagram?: string; tiktok?: string }> | null;
+    if (!Array.isArray(rows)) continue;
 
     for (const row of rows) {
       const ig = row.instagram?.toLowerCase().trim() || null;
       const tt = row.tiktok?.toLowerCase().trim() || null;
-      if (!ig || !tt) continue; // Only count paired rows for voting
+      if (!ig || !tt) continue;
 
       // Sanity: skip if IG handle is actually a known TT-only username, or vice versa
-      // This catches swapped-column errors (e.g. ig=bege, tt=berkcan when bege is a TT handle)
       if (scannedTt.has(ig) && !scannedIg.has(ig)) continue;
       if (scannedIg.has(tt) && !scannedTt.has(tt)) continue;
 
@@ -204,11 +194,10 @@ export function reconcileIdentities(): {
   }
 
   // Resolve canonical pairs by majority vote
-  const canonicalPairs = new Map<string, string>(); // ig → tt (canonical)
+  const canonicalPairs = new Map<string, string>();
   const processedIg = new Set<string>();
   const processedTt = new Set<string>();
 
-  // For each IG handle, find the TT handle with the most votes
   for (const [ig, ttVotes] of igToTtVotes.entries()) {
     let bestTt = "";
     let bestCount = 0;
@@ -221,7 +210,7 @@ export function reconcileIdentities(): {
 
     if (!bestTt) continue;
 
-    // Verify the TT side also agrees: the IG handle should be the top vote for this TT
+    // Verify the TT side also agrees
     const reverseVotes = ttToIgVotes.get(bestTt);
     if (reverseVotes) {
       let bestReverseIg = "";
@@ -232,7 +221,6 @@ export function reconcileIdentities(): {
           bestReverseCount = count;
         }
       }
-      // If TT's top IG vote disagrees with this IG handle, skip (conflicting evidence)
       if (bestReverseIg && bestReverseIg !== ig) {
         details.push(`conflict: ig=${ig}→tt=${bestTt} but tt=${bestTt}→ig=${bestReverseIg}, skipped`);
         skipped++;
@@ -247,21 +235,23 @@ export function reconcileIdentities(): {
 
   // ── Phase 2: Apply canonical pairs ──
   for (const [ig, tt] of canonicalPairs.entries()) {
-    const byIg = db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, ig)).get();
-    const byTt = db.select().from(influencerIdentity).where(eq(influencerIdentity.tiktokUsername, tt)).get();
+    const byIgRows = await db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, ig)).limit(1);
+    const byIg = byIgRows[0];
+    const byTtRows = await db.select().from(influencerIdentity).where(eq(influencerIdentity.tiktokUsername, tt)).limit(1);
+    const byTt = byTtRows[0];
 
     if (byIg && byTt && byIg.id === byTt.id) {
       alreadyOk++;
     } else if (byIg && byTt && byIg.id !== byTt.id) {
-      ensureIdentity(ig, tt);
+      await ensureIdentity(ig, tt);
       merged++;
       details.push(`merged: ig=${ig} + tt=${tt}`);
     } else if (byIg || byTt) {
-      ensureIdentity(ig, tt);
+      await ensureIdentity(ig, tt);
       merged++;
       details.push(`linked: ig=${ig} + tt=${tt}`);
     } else {
-      ensureIdentity(ig, tt);
+      await ensureIdentity(ig, tt);
       created++;
       details.push(`created pair: ig=${ig} + tt=${tt}`);
     }
@@ -275,20 +265,18 @@ export function reconcileIdentities(): {
   for (const key of orphanKeys) {
     const [platform, username] = key.split(":");
 
-    const hasIdentity =
-      platform === "instagram"
-        ? db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, username)).get()
-        : db.select().from(influencerIdentity).where(eq(influencerIdentity.tiktokUsername, username)).get();
+    const identityRows = platform === "instagram"
+      ? await db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, username)).limit(1)
+      : await db.select().from(influencerIdentity).where(eq(influencerIdentity.tiktokUsername, username)).limit(1);
 
-    if (hasIdentity) continue;
+    if (identityRows[0]) continue;
 
     const ig = platform === "instagram" ? username : null;
     const tt = platform === "tiktok" ? username : null;
-    ensureIdentity(ig, tt);
+    await ensureIdentity(ig, tt);
     created++;
     details.push(`orphan: ${platform}=${username}`);
   }
 
   return { created, merged, alreadyOk, skipped, details };
 }
-

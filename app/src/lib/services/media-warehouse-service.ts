@@ -65,11 +65,11 @@ let warehouseIdCounter = 0;
  * - Existing items get metrics updated (views, likes, comments)
  * - Returns summary of what happened
  */
-export function ingestContentItems(
+export async function ingestContentItems(
   items: ContentItem[],
   platform: Platform,
   username: string
-): IngestResult {
+): Promise<IngestResult> {
   const normalizedUsername = username.toLowerCase().trim();
   const now = new Date().toISOString();
   let newItems = 0;
@@ -80,7 +80,7 @@ export function ingestContentItems(
     const externalId = item.id;
 
     // Check for existing item
-    const existing = db
+    const existingRows = await db
       .select()
       .from(creatorMediaItem)
       .where(
@@ -89,7 +89,8 @@ export function ingestContentItems(
           eq(creatorMediaItem.externalId, externalId)
         )
       )
-      .get();
+      .limit(1);
+    const existing = existingRows[0];
 
     if (existing) {
       // Update metrics if they changed
@@ -98,7 +99,7 @@ export function ingestContentItems(
       const commentsChanged = (item.commentsCount ?? null) !== existing.comments;
 
       if (viewsChanged || likesChanged || commentsChanged) {
-        db.update(creatorMediaItem)
+        await db.update(creatorMediaItem)
           .set({
             views: item.views ?? existing.views,
             likes: item.likeCount ?? existing.likes,
@@ -109,8 +110,7 @@ export function ingestContentItems(
             // Update caption if it was previously null
             caption: item.caption ?? existing.caption,
           })
-          .where(eq(creatorMediaItem.id, existing.id))
-          .run();
+          .where(eq(creatorMediaItem.id, existing.id));
         updatedItems++;
       } else {
         unchangedItems++;
@@ -123,7 +123,7 @@ export function ingestContentItems(
         item.commercialMetadata?.isSponsored
       );
 
-      db.insert(creatorMediaItem)
+      await db.insert(creatorMediaItem)
         .values({
           id,
           platform,
@@ -138,18 +138,13 @@ export function ingestContentItems(
           likes: item.likeCount ?? null,
           comments: item.commentsCount ?? null,
           isCommercial,
-          commercialMetadataJson: item.commercialMetadata
-            ? JSON.stringify(item.commercialMetadata)
-            : null,
-          rawMetadataJson: item.rawMetadata
-            ? JSON.stringify(item.rawMetadata)
-            : null,
+          commercialMetadataJson: item.commercialMetadata ?? null,
+          rawMetadataJson: item.rawMetadata ?? null,
           firstSeenAt: now,
           lastMetricUpdateAt: now,
           previousViews: null,
           metricUpdateCount: 1,
-        })
-        .run();
+        });
       newItems++;
     }
   }
@@ -169,12 +164,12 @@ export function ingestContentItems(
 /**
  * Get all warehouse items for a creator, newest first.
  */
-export function getCreatorItems(
+export async function getCreatorItems(
   platform: Platform,
   username: string
-): WarehouseItem[] {
+): Promise<WarehouseItem[]> {
   const normalizedUsername = username.toLowerCase().trim();
-  const rows = db
+  const rows = await db
     .select()
     .from(creatorMediaItem)
     .where(
@@ -183,8 +178,7 @@ export function getCreatorItems(
         eq(creatorMediaItem.username, normalizedUsername)
       )
     )
-    .orderBy(desc(creatorMediaItem.publishedAt))
-    .all();
+    .orderBy(desc(creatorMediaItem.publishedAt));
 
   return rows.map(rowToItem);
 }
@@ -192,11 +186,11 @@ export function getCreatorItems(
 /**
  * Get items with significant metric drift (view count changed).
  */
-export function getMetricDrifts(
+export async function getMetricDrifts(
   platform: Platform,
   username: string
-): MetricDrift[] {
-  const items = getCreatorItems(platform, username);
+): Promise<MetricDrift[]> {
+  const items = await getCreatorItems(platform, username);
   return items
     .filter((item) => item.previousViews !== null && item.views !== null)
     .map((item) => {
@@ -220,12 +214,12 @@ export function getMetricDrifts(
 /**
  * Count total items in warehouse for a creator.
  */
-export function getCreatorItemCount(
+export async function getCreatorItemCount(
   platform: Platform,
   username: string
-): number {
+): Promise<number> {
   const normalizedUsername = username.toLowerCase().trim();
-  const rows = db
+  const rows = await db
     .select({ id: creatorMediaItem.id })
     .from(creatorMediaItem)
     .where(
@@ -233,8 +227,7 @@ export function getCreatorItemCount(
         eq(creatorMediaItem.platform, platform),
         eq(creatorMediaItem.username, normalizedUsername)
       )
-    )
-    .all();
+    );
   return rows.length;
 }
 

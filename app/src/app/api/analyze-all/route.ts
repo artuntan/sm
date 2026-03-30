@@ -112,7 +112,7 @@ async function analyzePlatform(
     let cacheInfo = "";
 
     if (!forceRefresh) {
-      const cached = getCachedProviderResult(platform, username);
+      const cached = await getCachedProviderResult(platform, username);
       if (cached) {
         providerResult = cached.result;
         cacheHit = true;
@@ -120,16 +120,16 @@ async function analyzePlatform(
       } else {
         const provider = getProvider(platform);
         providerResult = await provider.fetchRecentMedia(username);
-        cacheProviderResult(platform, username, providerResult);
+        await cacheProviderResult(platform, username, providerResult);
       }
     } else {
       const provider = getProvider(platform);
       providerResult = await provider.fetchRecentMedia(username);
-      cacheProviderResult(platform, username, providerResult);
+      await cacheProviderResult(platform, username, providerResult);
     }
 
     // M2: Persist items to warehouse (dedup + metric updates)
-    const warehouseResult = ingestContentItems(providerResult.items, platform, username);
+    const warehouseResult = await ingestContentItems(providerResult.items, platform, username);
     if (warehouseResult.newItems > 0 || warehouseResult.updatedItems > 0) {
       console.log(
         `[M2] ${platform}/@${username}: +${warehouseResult.newItems} new, ` +
@@ -138,7 +138,7 @@ async function analyzePlatform(
     }
 
     // M3: Update scan profile (posting frequency → adaptive TTL)
-    const scanProfile = updateScanProfile(platform, username, providerResult);
+    const scanProfile = await updateScanProfile(platform, username, providerResult);
     console.log(
       `[M3] ${platform}/@${username}: ${scanProfile.postsPerWeek} posts/wk, ` +
       `tier=${scanProfile.frequencyTier}, ttl=${Math.round(scanProfile.adaptiveTtlMs / 3600000)}h`
@@ -290,7 +290,7 @@ export async function POST(request: NextRequest) {
     const { ensureIdentity } = await import("@/lib/services/identity-service");
     const igNorm = instagram?.toLowerCase().trim() || null;
     const ttNorm = tiktok?.toLowerCase().trim() || null;
-    ensureIdentity(igNorm, ttNorm);
+    await ensureIdentity(igNorm, ttNorm);
   } catch (err) {
     console.error("[identity] Auto-link error:", err);
   }

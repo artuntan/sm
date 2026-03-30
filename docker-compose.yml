@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: smdev
+      POSTGRES_PASSWORD: smdev
+      POSTGRES_DB: smdev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://smdev:smdev@postgres:5432/smdev
+      BETTER_AUTH_SECRET: dev-secret-change-in-production
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:

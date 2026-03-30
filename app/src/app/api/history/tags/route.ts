@@ -54,7 +54,7 @@ export async function PATCH(request: NextRequest) {
 
   await db
     .update(analysisRun)
-    .set({ tags: JSON.stringify(normalizedTags) })
+    .set({ tags: normalizedTags })
     .where(eq(analysisRun.id, runId));
 
   return NextResponse.json({ success: true, tags: normalizedTags });

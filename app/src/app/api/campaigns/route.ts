@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       notes: notes ?? null,
       budgetAmount: budgetAmount ?? null,
       budgetCurrency: budgetCurrency ?? null,
-      tags: JSON.stringify(tags ?? []),
+      tags: tags ?? [],
       createdAt: now,
       updatedAt: now,
       createdBy: session.user.id,
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         ...created[0],
-        tags: JSON.parse((created[0]?.tags as string) ?? "[]"),
+        tags: created[0]?.tags ?? [],
       },
       { status: 201 }
     );
@@ -197,7 +197,7 @@ export async function GET(request: NextRequest) {
 
     const result = rows.map((row) => ({
       ...row,
-      tags: JSON.parse((row.tags as string) ?? "[]"),
+      tags: row.tags ?? [],
     }));
 
     return NextResponse.json({ campaigns: result });

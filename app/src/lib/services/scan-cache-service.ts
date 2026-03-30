@@ -58,13 +58,13 @@ export function evaluateFreshness(fetchedAt: string, adaptiveTtlMs?: number): Ca
  *
  * Returns the cached result with freshness metadata if usable.
  */
-export function getCachedProviderResult(
+export async function getCachedProviderResult(
   platform: Platform,
   username: string
-): CachedProviderResult | null {
+): Promise<CachedProviderResult | null> {
   const normalizedUsername = username.toLowerCase().trim();
 
-  const row = db
+  const rows = await db
     .select()
     .from(creatorScanCache)
     .where(
@@ -73,21 +73,21 @@ export function getCachedProviderResult(
         eq(creatorScanCache.username, normalizedUsername)
       )
     )
-    .get();
+    .limit(1);
+  const row = rows[0];
 
   if (!row) return null;
 
   const ageMs = Date.now() - new Date(row.fetchedAt).getTime();
-  
+
   // Use adaptive TTL for this specific creator
-  const adaptiveTtl = getAdaptiveTtl(platform, normalizedUsername);
+  const adaptiveTtl = await getAdaptiveTtl(platform, normalizedUsername);
   const freshness = evaluateFreshness(row.fetchedAt, adaptiveTtl);
 
   // Hard expiry: delete ancient entries
   if (ageMs > HARD_EXPIRY_MS) {
-    db.delete(creatorScanCache)
-      .where(eq(creatorScanCache.id, row.id))
-      .run();
+    await db.delete(creatorScanCache)
+      .where(eq(creatorScanCache.id, row.id));
     return null;
   }
 
@@ -96,9 +96,9 @@ export function getCachedProviderResult(
     return null;
   }
 
-  // Fresh or stale: deserialize and return
+  // Fresh or stale: return directly (jsonb column, no parsing needed)
   try {
-    const result: ProviderResult = JSON.parse(row.providerResultJson);
+    const result: ProviderResult = row.providerResultJson as ProviderResult;
     return {
       result,
       freshness,
@@ -107,9 +107,8 @@ export function getCachedProviderResult(
     };
   } catch {
     // Corrupted cache entry — delete it
-    db.delete(creatorScanCache)
-      .where(eq(creatorScanCache.id, row.id))
-      .run();
+    await db.delete(creatorScanCache)
+      .where(eq(creatorScanCache.id, row.id));
     return null;
   }
 }
@@ -118,20 +117,20 @@ export function getCachedProviderResult(
  * Store a ProviderResult in the durable cache.
  * Uses upsert: inserts new or replaces existing entry for (platform, username).
  */
-export function cacheProviderResult(
+export async function cacheProviderResult(
   platform: Platform,
   username: string,
   result: ProviderResult
-): void {
+): Promise<void> {
   const normalizedUsername = username.toLowerCase().trim();
   const now = new Date().toISOString();
   // Use adaptive TTL for expiry calculation
-  const adaptiveTtl = getAdaptiveTtl(platform, normalizedUsername);
+  const adaptiveTtl = await getAdaptiveTtl(platform, normalizedUsername);
   const expiresAt = new Date(Date.now() + adaptiveTtl).toISOString();
   const id = `cache_${platform}_${normalizedUsername}_${Date.now()}`;
 
   // Check for existing
-  const existing = db
+  const existingRows = await db
     .select({ id: creatorScanCache.id })
     .from(creatorScanCache)
     .where(
@@ -140,10 +139,11 @@ export function cacheProviderResult(
         eq(creatorScanCache.username, normalizedUsername)
       )
     )
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   const values = {
-    providerResultJson: JSON.stringify(result),
+    providerResultJson: result,
     providerSource: result.source,
     itemCount: result.items.length,
     fetchedAt: now,
@@ -151,19 +151,17 @@ export function cacheProviderResult(
   };
 
   if (existing) {
-    db.update(creatorScanCache)
+    await db.update(creatorScanCache)
       .set(values)
-      .where(eq(creatorScanCache.id, existing.id))
-      .run();
+      .where(eq(creatorScanCache.id, existing.id));
   } else {
-    db.insert(creatorScanCache)
+    await db.insert(creatorScanCache)
       .values({
         id,
         platform,
         username: normalizedUsername,
         ...values,
-      })
-      .run();
+      });
   }
 }
 
@@ -171,27 +169,26 @@ export function cacheProviderResult(
  * Invalidate (delete) the cache entry for a specific platform + username.
  * Used when a force-refresh is requested.
  */
-export function invalidateCache(platform: Platform, username: string): void {
+export async function invalidateCache(platform: Platform, username: string): Promise<void> {
   const normalizedUsername = username.toLowerCase().trim();
-  db.delete(creatorScanCache)
+  await db.delete(creatorScanCache)
     .where(
       and(
         eq(creatorScanCache.platform, platform),
         eq(creatorScanCache.username, normalizedUsername)
       )
-    )
-    .run();
+    );
 }
 
 /**
  * Get cache stats for diagnostic/debugging purposes.
  */
-export function getCacheStats(): {
+export async function getCacheStats(): Promise<{
   totalEntries: number;
   freshEntries: number;
   staleEntries: number;
-} {
-  const rows = db.select().from(creatorScanCache).all();
+}> {
+  const rows = await db.select().from(creatorScanCache);
   let fresh = 0;
   let stale = 0;
   for (const row of rows) {

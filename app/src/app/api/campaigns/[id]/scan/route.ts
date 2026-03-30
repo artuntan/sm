@@ -89,10 +89,10 @@ export async function POST(
       };
 
       // Fire webhook if configured and there are new gaps
-      const meta = camp.meta ? JSON.parse(camp.meta as string) : {};
+      const meta = (camp.meta as Record<string, unknown>) ?? {};
       const webhookUrl = meta.gapAlertWebhook;
 
-      if (webhookUrl && gapClusters.length > 0) {
+      if (typeof webhookUrl === "string" && gapClusters.length > 0) {
         try {
           await fetch(webhookUrl, {
             method: "POST",

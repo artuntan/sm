@@ -79,13 +79,13 @@ export type WarehouseIdentity = {
 // ---------------------------------------------------------------------------
 
 function computeBenchmark(
-  providerResultJson: string | null,
+  providerResultJson: unknown | null,
   platform: Platform
 ): BenchmarkSummary | null {
   if (!providerResultJson) return null;
 
   try {
-    const pr: ProviderResult = JSON.parse(providerResultJson);
+    const pr = providerResultJson as ProviderResult;
     if (!pr.items || pr.items.length === 0) return null;
 
     const result = selectDualBenchmarkFromItems(pr.items, platform);
@@ -118,13 +118,13 @@ function computeBenchmark(
   }
 }
 
-function buildPlatformData(
+async function buildPlatformData(
   platform: Platform,
   username: string
-): PlatformScanData | null {
+): Promise<PlatformScanData | null> {
   const norm = username.toLowerCase().trim();
 
-  const cacheRow = db
+  const [cacheRow] = await db
     .select()
     .from(creatorScanCache)
     .where(
@@ -133,9 +133,9 @@ function buildPlatformData(
         eq(creatorScanCache.username, norm)
       )
     )
-    .get();
+    .limit(1);
 
-  const profileRow = db
+  const [profileRow] = await db
     .select()
     .from(creatorScanProfile)
     .where(
@@ -144,11 +144,11 @@ function buildPlatformData(
         eq(creatorScanProfile.username, norm)
       )
     )
-    .get();
+    .limit(1);
 
   if (!cacheRow && !profileRow) return null;
 
-  const adaptiveTtl = getAdaptiveTtl(platform, norm);
+  const adaptiveTtl = await getAdaptiveTtl(platform, norm);
   const lastScanAt = cacheRow?.fetchedAt ?? profileRow?.lastScanAt ?? "";
   const freshness = cacheRow
     ? evaluateFreshness(cacheRow.fetchedAt, adaptiveTtl)
@@ -161,14 +161,12 @@ function buildPlatformData(
   let profilePicUrl: string | null = null;
   let isVerified = false;
   if (profileRow?.profileSnapshotJson) {
-    try {
-      const snap = JSON.parse(profileRow.profileSnapshotJson);
-      profileName = snap.displayName || snap.fullName || null;
-      profileFollowers = snap.followerCount ?? null;
-      profileFollowing = snap.followingCount ?? null;
-      profilePicUrl = snap.profilePicUrl || snap.profilePicture || null;
-      isVerified = snap.verified ?? false;
-    } catch {}
+    const snap = profileRow.profileSnapshotJson as Record<string, unknown>;
+    profileName = (snap.displayName as string) || (snap.fullName as string) || null;
+    profileFollowers = (snap.followerCount as number) ?? null;
+    profileFollowing = (snap.followingCount as number) ?? null;
+    profilePicUrl = (snap.profilePicUrl as string) || (snap.profilePicture as string) || null;
+    isVerified = (snap.verified as boolean) ?? false;
   }
 
   // Compute benchmark from cached provider result
@@ -213,20 +211,20 @@ export async function GET() {
     const seenUsernames = new Set<string>();
 
     // Phase 1: Build from identity table (merged accounts)
-    const idRows = db.select().from(influencerIdentity).all();
+    const idRows = await db.select().from(influencerIdentity);
 
     for (const row of idRows) {
       const platforms: PlatformScanData[] = [];
 
       if (row.instagramUsername) {
         seenUsernames.add(`instagram:${row.instagramUsername}`);
-        const data = buildPlatformData("instagram", row.instagramUsername);
+        const data = await buildPlatformData("instagram", row.instagramUsername);
         if (data) platforms.push(data);
       }
 
       if (row.tiktokUsername) {
         seenUsernames.add(`tiktok:${row.tiktokUsername}`);
-        const data = buildPlatformData("tiktok", row.tiktokUsername);
+        const data = await buildPlatformData("tiktok", row.tiktokUsername);
         if (data) platforms.push(data);
       }
 
@@ -251,8 +249,8 @@ export async function GET() {
     }
 
     // Phase 2: Orphan accounts (scanned but not linked to any identity)
-    const allCache = db.select().from(creatorScanCache).all();
-    const allProfiles = db.select().from(creatorScanProfile).all();
+    const allCache = await db.select().from(creatorScanCache);
+    const allProfiles = await db.select().from(creatorScanProfile);
 
     const allKeys = new Set<string>();
     for (const c of allCache) allKeys.add(`${c.platform}:${c.username}`);
@@ -263,7 +261,7 @@ export async function GET() {
       seenUsernames.add(key);
 
       const [platform, username] = key.split(":");
-      const data = buildPlatformData(platform as Platform, username);
+      const data = await buildPlatformData(platform as Platform, username);
       if (!data) continue;
 
       identities.push({

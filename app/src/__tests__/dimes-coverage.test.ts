@@ -839,19 +839,22 @@ describe("Gap Analysis — Cross-Brand Facebook Error Isolation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. Scanner Tests
+// 4. Scanner Tests (requires DATABASE_URL — integration tests)
 // ---------------------------------------------------------------------------
 
-describe("Scanner — Post Ingestion (DB-backed)", () => {
-  beforeEach(() => {
-    clearAllPosts();
+const hasDb = !!process.env.DATABASE_URL;
+const describeDb = hasDb ? describe : describe.skip;
+
+describeDb("Scanner — Post Ingestion (DB-backed)", () => {
+  beforeEach(async () => {
+    await clearAllPosts();
   });
 
-  afterAll(() => {
-    clearAllPosts();
+  afterAll(async () => {
+    await clearAllPosts();
   });
 
-  it("ingests and classifies a recipe post into DB", () => {
+  it("ingests and classifies a recipe post into DB", async () => {
     const account = {
       id: "acc_1",
       brandId: "brand_dimes_tr",
@@ -864,7 +867,7 @@ describe("Scanner — Post Ingestion (DB-backed)", () => {
       notes: null,
     };
 
-    const post = ingestPost(
+    const post = await ingestPost(
       {
         platformPostId: "ig_001",
         platform: "instagram",
@@ -884,13 +887,13 @@ describe("Scanner — Post Ingestion (DB-backed)", () => {
     expect(post!.clusterFingerprint).toBeTruthy();
 
     // Verify it's readable from DB
-    const stored = getAllPosts();
+    const stored = await getAllPosts();
     expect(stored.length).toBe(1);
     expect(stored[0].classification).toBe("recipe");
     expect(stored[0].platformPostId).toBe("ig_001");
   });
 
-  it("deduplicates by platform + postId across calls", () => {
+  it("deduplicates by platform + postId across calls", async () => {
     const account = {
       id: "acc_1",
       brandId: "brand_dimes_tr",
@@ -911,15 +914,15 @@ describe("Scanner — Post Ingestion (DB-backed)", () => {
       publishedAt: "2025-06-15T10:00:00Z",
     };
 
-    const first = ingestPost(raw, account, "test_scan_2");
-    const second = ingestPost(raw, account, "test_scan_3");
+    const first = await ingestPost(raw, account, "test_scan_2");
+    const second = await ingestPost(raw, account, "test_scan_3");
 
     expect(first).not.toBeNull();
     expect(second).toBeNull(); // dedup via DB unique index
-    expect(getAllPosts().length).toBe(1);
+    expect((await getAllPosts()).length).toBe(1);
   });
 
-  it("persists data across separate getAllPosts() calls (simulating request isolation)", () => {
+  it("persists data across separate getAllPosts() calls (simulating request isolation)", async () => {
     const account = {
       id: "acc_1",
       brandId: "brand_dimes_tr",
@@ -933,7 +936,7 @@ describe("Scanner — Post Ingestion (DB-backed)", () => {
     };
 
     // Ingest a post
-    ingestPost(
+    await ingestPost(
       {
         platformPostId: "ig_persist_001",
         platform: "instagram",
@@ -946,8 +949,8 @@ describe("Scanner — Post Ingestion (DB-backed)", () => {
     );
 
     // Call getAllPosts() multiple times — must return same data
-    const read1 = getAllPosts();
-    const read2 = getAllPosts();
+    const read1 = await getAllPosts();
+    const read2 = await getAllPosts();
 
     expect(read1.length).toBe(1);
     expect(read2.length).toBe(1);
@@ -1641,17 +1644,17 @@ import * as repo from "@/lib/dimes/repository";
 import { computeFastScanBudget, type FetchIntent } from "@/lib/dimes/providers";
 import type { AccountScanState } from "@/lib/dimes/types";
 
-describe("Account Scan State CRUD", () => {
-  beforeEach(() => {
-    repo.clearAllCoverageData();
+describeDb("Account Scan State CRUD", () => {
+  beforeEach(async () => {
+    await repo.clearAllCoverageData();
   });
 
-  it("returns null when no state exists for account", () => {
-    const state = repo.getAccountScanState("nonexistent");
+  it("returns null when no state exists for account", async () => {
+    const state = await repo.getAccountScanState("nonexistent");
     expect(state).toBeNull();
   });
 
-  it("inserts and retrieves scan state", () => {
+  it("inserts and retrieves scan state", async () => {
     const now = new Date().toISOString();
     const state: AccountScanState = {
       accountId: "acc_test_1",
@@ -1664,8 +1667,8 @@ describe("Account Scan State CRUD", () => {
       updatedAt: now,
     };
 
-    repo.upsertAccountScanState(state);
-    const retrieved = repo.getAccountScanState("acc_test_1");
+    await repo.upsertAccountScanState(state);
+    const retrieved = await repo.getAccountScanState("acc_test_1");
 
     expect(retrieved).not.toBeNull();
     expect(retrieved!.accountId).toBe("acc_test_1");
@@ -1674,7 +1677,7 @@ describe("Account Scan State CRUD", () => {
     expect(retrieved!.lastScanPostCount).toBe(42);
   });
 
-  it("updates existing scan state", () => {
+  it("updates existing scan state", async () => {
     const now = new Date().toISOString();
     const initial: AccountScanState = {
       accountId: "acc_test_2",
@@ -1687,7 +1690,7 @@ describe("Account Scan State CRUD", () => {
       updatedAt: "2025-01-01T00:00:00Z",
     };
 
-    repo.upsertAccountScanState(initial);
+    await repo.upsertAccountScanState(initial);
 
     // Update
     const updated: AccountScanState = {
@@ -1697,17 +1700,17 @@ describe("Account Scan State CRUD", () => {
       lastScanPostCount: 15,
       updatedAt: now,
     };
-    repo.upsertAccountScanState(updated);
+    await repo.upsertAccountScanState(updated);
 
-    const retrieved = repo.getAccountScanState("acc_test_2");
+    const retrieved = await repo.getAccountScanState("acc_test_2");
     expect(retrieved!.lastScanMode).toBe("fast");
     expect(retrieved!.lastScanPostCount).toBe(15);
     expect(retrieved!.lastSuccessfulScanAt).toBe(now);
   });
 
-  it("getAllAccountScanStates returns all entries", () => {
+  it("getAllAccountScanStates returns all entries", async () => {
     const now = new Date().toISOString();
-    repo.upsertAccountScanState({
+    await repo.upsertAccountScanState({
       accountId: "acc_a",
       platform: "instagram",
       brandId: "brand_1",
@@ -1717,7 +1720,7 @@ describe("Account Scan State CRUD", () => {
       latestPostPublishedAt: now,
       updatedAt: now,
     });
-    repo.upsertAccountScanState({
+    await repo.upsertAccountScanState({
       accountId: "acc_b",
       platform: "tiktok",
       brandId: "brand_1",
@@ -1728,14 +1731,14 @@ describe("Account Scan State CRUD", () => {
       updatedAt: now,
     });
 
-    const all = repo.getAllAccountScanStates();
+    const all = await repo.getAllAccountScanStates();
     expect(all.length).toBe(2);
     expect(all.map(s => s.accountId).sort()).toEqual(["acc_a", "acc_b"]);
   });
 
-  it("clearAllCoverageData clears scan states", () => {
+  it("clearAllCoverageData clears scan states", async () => {
     const now = new Date().toISOString();
-    repo.upsertAccountScanState({
+    await repo.upsertAccountScanState({
       accountId: "acc_clear",
       platform: "facebook",
       brandId: "brand_1",
@@ -1746,9 +1749,9 @@ describe("Account Scan State CRUD", () => {
       updatedAt: now,
     });
 
-    expect(repo.getAccountScanState("acc_clear")).not.toBeNull();
-    repo.clearAllCoverageData();
-    expect(repo.getAccountScanState("acc_clear")).toBeNull();
+    expect(await repo.getAccountScanState("acc_clear")).not.toBeNull();
+    await repo.clearAllCoverageData();
+    expect(await repo.getAccountScanState("acc_clear")).toBeNull();
   });
 });
 

@@ -1,7 +1,7 @@
 /**
  * Better Auth — Server Configuration
  *
- * Credentials-based auth with SQLite persistence via Drizzle.
+ * Credentials-based auth with PostgreSQL persistence via Drizzle.
  * Custom fields: systemRole, approvalStatus, approvedBy, approvedAt.
  *
  * Bootstrap: env var BOOTSTRAP_ADMIN_EMAIL triggers auto-approval
@@ -17,7 +17,7 @@ const BOOTSTRAP_ADMIN_EMAIL = process.env.BOOTSTRAP_ADMIN_EMAIL || "";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
-    provider: "sqlite",
+    provider: "pg",
     schema: {
       user: schema.user,
       session: schema.session,

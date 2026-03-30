@@ -4,26 +4,25 @@
  * Idempotent: creates teams if they don't exist.
  * Enrolls the bootstrap admin as team_admin of all teams.
  *
- * Uses the canonical DB_PATH from db-path.ts so the seed
- * always hits the same database file as the runtime.
- *
- * Usage: npx tsx src/lib/db/seed.ts
- *        or: BOOTSTRAP_ADMIN_EMAIL=admin@dimes.com npx tsx src/lib/db/seed.ts
+ * Usage: DATABASE_URL=... npx tsx src/lib/db/seed.ts
+ *        or: DATABASE_URL=... BOOTSTRAP_ADMIN_EMAIL=admin@dimes.com npx tsx src/lib/db/seed.ts
  */
 
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, and } from "drizzle-orm";
 import * as schema from "./schema";
-import { DB_PATH } from "./db-path";
 
-console.log(`📂 DB path: ${DB_PATH}`);
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error("❌ DATABASE_URL environment variable is required");
+  process.exit(1);
+}
 
-const sqlite = new Database(DB_PATH);
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
+console.log(`📂 Connecting to database...`);
 
-const db = drizzle(sqlite, { schema });
+const pool = new Pool({ connectionString: DATABASE_URL });
+const db = drizzle(pool, { schema });
 
 const SEED_TEAMS = [
   { id: "team_dimes_tr", slug: "dimes-tr", name: "Dimes TR" },
@@ -101,7 +100,7 @@ async function seed() {
   }
 
   console.log("✅ Seed complete");
-  sqlite.close();
+  await pool.end();
 }
 
 seed().catch((err) => {

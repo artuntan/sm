@@ -103,12 +103,10 @@ export async function GET(request: NextRequest) {
   const rows: string[] = [headers.join(",")];
 
   for (const run of runs) {
-    let snapshot: SnapshotRow[] = [];
-    try { snapshot = JSON.parse(run.resultSnapshot as string); } catch { continue; }
+    const snapshot: SnapshotRow[] = (run.resultSnapshot as SnapshotRow[]) || [];
 
     const runDate = run.startedAt ? new Date(run.startedAt as unknown as number * 1000).toISOString().split("T")[0] : "";
-    let tags: string[] = [];
-    try { tags = JSON.parse(run.tags as string); } catch { /* ignore */ }
+    const tags: string[] = (run.tags as string[]) || [];
 
     for (const entry of snapshot) {
       // Output one row per platform per creator

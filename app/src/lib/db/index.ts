@@ -1,34 +1,47 @@
 /**
- * Database Connection — SQLite + Drizzle ORM
+ * Database Connection — PostgreSQL + Drizzle ORM
  *
- * Single-file SQLite database with deterministic path resolution.
- * The DB file is gitignored — each environment creates its own.
+ * Uses node-postgres (pg) with connection pooling.
+ * Pool size adjusts for Lambda (1) vs server (10).
+ * Lazy initialization to avoid failing during Next.js build.
  */
 
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { Pool } from "pg";
+import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
-import { DB_PATH } from "./db-path";
 
-const sqlite = new Database(DB_PATH);
+let _pool: Pool | null = null;
+let _db: NodePgDatabase<typeof schema> | null = null;
 
-// Enable WAL mode for better concurrent read performance
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
+function getPool(): Pool {
+  if (!_pool) {
+    const url = process.env.DATABASE_URL;
+    if (!url) {
+      throw new Error("DATABASE_URL environment variable is required");
+    }
+    _pool = new Pool({
+      connectionString: url,
+      max: process.env.AWS_LAMBDA_FUNCTION_NAME ? 1 : 10,
+    });
+  }
+  return _pool;
+}
 
-// Auto-create coverage_account_scan_state if missing (new table — no migration needed)
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS coverage_account_scan_state (
-    accountId TEXT PRIMARY KEY,
-    platform TEXT NOT NULL,
-    brandId TEXT NOT NULL,
-    lastSuccessfulScanAt TEXT,
-    lastScanMode TEXT,
-    lastScanPostCount INTEGER NOT NULL DEFAULT 0,
-    latestPostPublishedAt TEXT,
-    updatedAt TEXT NOT NULL
-  )
-`);
+function getDb(): NodePgDatabase<typeof schema> {
+  if (!_db) {
+    _db = drizzle(getPool(), { schema });
+  }
+  return _db;
+}
 
-export const db = drizzle(sqlite, { schema });
-export { sqlite, DB_PATH };
+// Proxy that lazily initializes on first property access
+export const db: NodePgDatabase<typeof schema> = new Proxy(
+  {} as NodePgDatabase<typeof schema>,
+  {
+    get(_target, prop, receiver) {
+      return Reflect.get(getDb(), prop, receiver);
+    },
+  }
+);
+
+export { getPool as pool };

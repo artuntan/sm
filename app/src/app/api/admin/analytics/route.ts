@@ -43,34 +43,28 @@ function estimateManualMinutes(run: {
   completeRows: number;
   partialRows: number;
   errorRows: number;
-  inputSummary: string;
-  resultSnapshot: string;
+  inputSummary: unknown;
+  resultSnapshot: unknown;
 }): number {
   const creatorCount = run.totalRows;
 
-  // Count platform handles from inputSummary JSON
+  // Count platform handles from inputSummary
   let platformHandleCount = 0;
-  try {
-    const handles: { instagram?: string; tiktok?: string }[] = JSON.parse(run.inputSummary);
-    for (const h of handles) {
-      if (h.instagram) platformHandleCount++;
-      if (h.tiktok) platformHandleCount++;
-    }
-  } catch {
-    platformHandleCount = creatorCount; // fallback
+  const handles = (run.inputSummary as { instagram?: string; tiktok?: string }[]) || [];
+  for (const h of handles) {
+    if (h.instagram) platformHandleCount++;
+    if (h.tiktok) platformHandleCount++;
   }
+  if (handles.length === 0) platformHandleCount = creatorCount; // fallback
 
   // Count successful platform analyses from resultSnapshot
   let successfulPlatformAnalyses = 0;
-  try {
-    const results: { instagram?: { status?: string } | null; tiktok?: { status?: string } | null }[] = JSON.parse(run.resultSnapshot);
-    for (const r of results) {
-      if (r.instagram && r.instagram.status !== "error") successfulPlatformAnalyses++;
-      if (r.tiktok && r.tiktok.status !== "error") successfulPlatformAnalyses++;
-    }
-  } catch {
-    successfulPlatformAnalyses = run.completeRows;
+  const results = (run.resultSnapshot as { instagram?: { status?: string } | null; tiktok?: { status?: string } | null }[]) || [];
+  for (const r of results) {
+    if (r.instagram && r.instagram.status !== "error") successfulPlatformAnalyses++;
+    if (r.tiktok && r.tiktok.status !== "error") successfulPlatformAnalyses++;
   }
+  if (results.length === 0) successfulPlatformAnalyses = run.completeRows;
 
   return (
     6 +

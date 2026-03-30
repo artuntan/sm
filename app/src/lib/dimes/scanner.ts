@@ -3,7 +3,7 @@
  *
  * Manages content scanning: both historical backfill and daily monitoring.
  *
- * IMPORTANT: This module uses DURABLE STORAGE via SQLite.
+ * IMPORTANT: This module uses DURABLE STORAGE via PostgreSQL.
  * All state is persisted through repository.ts.
  * There is NO in-memory state that could be lost between requests.
  *
@@ -55,11 +55,11 @@ export function makeScanId(): string {
  * Handles normalization, classification, fingerprinting.
  * Returns null if already seen (dedup via DB unique constraint).
  */
-export function ingestPost(
+export async function ingestPost(
   raw: RawFetchedPost,
   account: DimesSocialAccount,
   scanRunId: string
-): DimesContentPost | null {
+): Promise<DimesContentPost | null> {
   // Normalize & extract
   const normalized = raw.caption ? normalizeCaption(raw.caption) : null;
   const hashtags = raw.caption ? extractHashtags(normalizeCaption(raw.caption)) : [];
@@ -97,7 +97,7 @@ export function ingestPost(
   };
 
   // Insert into DB — returns null if duplicate (platform + platformPostId)
-  const insertedId = repo.insertPost(post, scanRunId);
+  const insertedId = await repo.insertPost(post, scanRunId);
   if (!insertedId) return null;
 
   return post;
@@ -107,30 +107,30 @@ export function ingestPost(
 // Storage access (reads from DB)
 // ---------------------------------------------------------------------------
 
-export function getAllPosts(since?: string): DimesContentPost[] {
+export async function getAllPosts(since?: string): Promise<DimesContentPost[]> {
   return repo.getAllPosts(since);
 }
 
-export function getPostsByBrand(brandId: string): DimesContentPost[] {
+export async function getPostsByBrand(brandId: string): Promise<DimesContentPost[]> {
   return repo.getPostsByBrand(brandId);
 }
 
-export function getEligiblePosts(brandId?: string): DimesContentPost[] {
+export async function getEligiblePosts(brandId?: string): Promise<DimesContentPost[]> {
   return repo.getEligiblePosts(brandId);
 }
 
 /**
  * WARNING: Deletes all coverage data. For testing only.
  */
-export function clearAllPosts(): void {
-  repo.clearAllCoverageData();
+export async function clearAllPosts(): Promise<void> {
+  await repo.clearAllCoverageData();
 }
 
 // ---------------------------------------------------------------------------
 // Scan run lifecycle
 // ---------------------------------------------------------------------------
 
-export function getScanHistory(): DimesScanRun[] {
+export async function getScanHistory(): Promise<DimesScanRun[]> {
   return repo.getScanHistory();
 }
 
@@ -143,30 +143,28 @@ export function getScanHistory(): DimesScanRun[] {
  * 4. Updates the scan run record (status=complete/partial)
  * 5. Returns the finalized scan run
  */
-export function executeScanRun(
+export async function executeScanRun(
   type: ScanType,
   fetchedPosts: { raw: RawFetchedPost; account: DimesSocialAccount }[],
   errors: ScanError[] = []
-): DimesScanRun {
+): Promise<DimesScanRun> {
   const scanId = makeScanId();
   const startedAt = new Date().toISOString();
 
   // Step 1: Create DB record
-  repo.createScanRun(scanId, type, startedAt);
+  await repo.createScanRun(scanId, type, startedAt);
 
   // Step 2: Ingest posts
   let newPostsIngested = 0;
   for (const { raw, account } of fetchedPosts) {
-    const post = ingestPost(raw, account, scanId);
+    const post = await ingestPost(raw, account, scanId);
     if (post) {
       newPostsIngested++;
     }
   }
 
   // Step 3: Count clusters from all source-eligible posts
-  // Source platform posts (IG/TT) enter clustering regardless of classification
-  // (except special_day). Destination platform posts need recipe/taste.
-  const allPosts = repo.getAllPosts();
+  const allPosts = await repo.getAllPosts();
   const SOURCE_SET = new Set(["instagram", "tiktok"]);
   const clusterCandidates = allPosts.filter((p) => {
     if (p.classification === "special_day") return false;
@@ -179,7 +177,7 @@ export function executeScanRun(
   const completedAt = new Date().toISOString();
   const status = errors.length > 0 ? "partial" : "complete";
 
-  repo.completeScanRun(scanId, {
+  await repo.completeScanRun(scanId, {
     status: status as any,
     completedAt,
     accountsScanned: new Set(fetchedPosts.map((f) => f.account.id)).size,

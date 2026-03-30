@@ -1,11 +1,10 @@
 /**
  * Dimes Content Coverage — Durable Repository
  *
- * All reads/writes go through SQLite via Drizzle ORM.
+ * All reads/writes go through Postgres via Drizzle ORM.
  * This is the SOLE source of truth for the Coverage product.
  *
- * No in-memory caching — every call reads/writes the DB file.
- * SQLite with WAL mode handles concurrent reads efficiently.
+ * No in-memory caching — every call reads/writes the DB.
  */
 
 import { db } from "@/lib/db";
@@ -27,23 +26,22 @@ import type {
 // Scan Run CRUD
 // ---------------------------------------------------------------------------
 
-export function createScanRun(
+export async function createScanRun(
   id: string,
   type: ScanType,
   startedAt: string
-): void {
-  db.insert(coverageScanRun)
+): Promise<void> {
+  await db.insert(coverageScanRun)
     .values({
       id,
       type,
       status: "running",
       startedAt,
-      errorsJson: "[]",
-    })
-    .run();
+      errorsJson: [],
+    });
 }
 
-export function completeScanRun(
+export async function completeScanRun(
   id: string,
   updates: {
     status: ScanStatus;
@@ -54,8 +52,8 @@ export function completeScanRun(
     clustersCreated: number;
     errors: ScanError[];
   }
-): void {
-  db.update(coverageScanRun)
+): Promise<void> {
+  await db.update(coverageScanRun)
     .set({
       status: updates.status,
       completedAt: updates.completedAt,
@@ -63,19 +61,17 @@ export function completeScanRun(
       postsFound: updates.postsFound,
       newPostsIngested: updates.newPostsIngested,
       clustersCreated: updates.clustersCreated,
-      errorsJson: JSON.stringify(updates.errors),
+      errorsJson: updates.errors,
     })
-    .where(eq(coverageScanRun.id, id))
-    .run();
+    .where(eq(coverageScanRun.id, id));
 }
 
-export function getScanHistory(limit: number = 20): DimesScanRun[] {
-  const rows = db
+export async function getScanHistory(limit: number = 20): Promise<DimesScanRun[]> {
+  const rows = await db
     .select()
     .from(coverageScanRun)
     .orderBy(desc(coverageScanRun.startedAt))
-    .limit(limit)
-    .all();
+    .limit(limit);
 
   return rows.map((r) => ({
     id: r.id,
@@ -88,7 +84,7 @@ export function getScanHistory(limit: number = 20): DimesScanRun[] {
     newPostsIngested: r.newPostsIngested,
     clustersCreated: r.clustersCreated,
     clustersUpdated: 0,
-    errors: JSON.parse(r.errorsJson) as ScanError[],
+    errors: r.errorsJson as ScanError[],
   }));
 }
 
@@ -100,9 +96,9 @@ export function getScanHistory(limit: number = 20): DimesScanRun[] {
  * Insert a post. Returns null if the platform+postId combo already exists
  * (dedup across requests, across scans, across restarts).
  */
-export function insertPost(post: DimesContentPost, scanRunId: string): string | null {
+export async function insertPost(post: DimesContentPost, scanRunId: string): Promise<string | null> {
   // Check for existing post with same platform + platformPostId
-  const existing = db
+  const existingRows = await db
     .select({ id: coveragePost.id })
     .from(coveragePost)
     .where(
@@ -111,11 +107,12 @@ export function insertPost(post: DimesContentPost, scanRunId: string): string | 
         eq(coveragePost.platformPostId, post.platformPostId)
       )
     )
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   if (existing) return null; // Already exists — dedup
 
-  db.insert(coveragePost)
+  await db.insert(coveragePost)
     .values({
       id: post.id,
       scanRunId,
@@ -126,17 +123,16 @@ export function insertPost(post: DimesContentPost, scanRunId: string): string | 
       permalink: post.permalink,
       caption: post.caption ?? null,
       normalizedCaption: post.normalizedCaption ?? null,
-      hashtagsJson: JSON.stringify(post.hashtags),
-      mentionsJson: JSON.stringify(post.mentions),
+      hashtagsJson: post.hashtags,
+      mentionsJson: post.mentions,
       publishedAt: post.publishedAt,
       fetchedAt: post.fetchedAt,
       mediaType: post.mediaType ?? null,
       thumbnailUrl: post.thumbnailUrl ?? null,
       classification: post.classification,
-      classificationSignalsJson: JSON.stringify(post.classificationSignals),
+      classificationSignalsJson: post.classificationSignals,
       clusterFingerprint: post.clusterFingerprint ?? null,
-    })
-    .run();
+    });
 
   return post.id;
 }
@@ -155,65 +151,64 @@ function rowToPost(row: typeof coveragePost.$inferSelect): DimesContentPost {
     permalink: row.permalink,
     caption: row.caption ?? null,
     normalizedCaption: row.normalizedCaption ?? null,
-    hashtags: JSON.parse(row.hashtagsJson) as string[],
-    mentions: JSON.parse(row.mentionsJson) as string[],
+    hashtags: row.hashtagsJson as string[],
+    mentions: row.mentionsJson as string[],
     publishedAt: row.publishedAt,
     fetchedAt: row.fetchedAt,
     mediaType: row.mediaType ?? null,
     thumbnailUrl: row.thumbnailUrl ?? null,
     classification: row.classification as ContentClassification,
-    classificationSignals: JSON.parse(row.classificationSignalsJson) as string[],
+    classificationSignals: row.classificationSignalsJson as string[],
     clusterFingerprint: row.clusterFingerprint ?? null,
   };
 }
 
-export function getAllPosts(since?: string): DimesContentPost[] {
-  const query = db.select().from(coveragePost);
-
+export async function getAllPosts(since?: string): Promise<DimesContentPost[]> {
   if (since) {
-    const rows = db
+    const rows = await db
       .select()
       .from(coveragePost)
-      .where(gte(coveragePost.publishedAt, since))
-      .all();
+      .where(gte(coveragePost.publishedAt, since));
     return rows.map(rowToPost);
   }
 
-  return query.all().map(rowToPost);
-}
-
-export function getPostsByBrand(brandId: string): DimesContentPost[] {
-  const rows = db
-    .select()
-    .from(coveragePost)
-    .where(eq(coveragePost.brandId, brandId))
-    .all();
+  const rows = await db.select().from(coveragePost);
   return rows.map(rowToPost);
 }
 
-export function getEligiblePosts(brandId?: string): DimesContentPost[] {
-  return getAllPosts().filter(
+export async function getPostsByBrand(brandId: string): Promise<DimesContentPost[]> {
+  const rows = await db
+    .select()
+    .from(coveragePost)
+    .where(eq(coveragePost.brandId, brandId));
+  return rows.map(rowToPost);
+}
+
+export async function getEligiblePosts(brandId?: string): Promise<DimesContentPost[]> {
+  const posts = await getAllPosts();
+  return posts.filter(
     (p) =>
       (p.classification === "recipe" || p.classification === "taste") &&
       (!brandId || p.brandId === brandId)
   );
 }
 
-export function getPostCount(): number {
-  const result = db
+export async function getPostCount(): Promise<number> {
+  const rows = await db
     .select({ count: sql<number>`count(*)` })
     .from(coveragePost)
-    .get();
+    .limit(1);
+  const result = rows[0];
   return result?.count ?? 0;
 }
 
 /**
  * Delete all coverage data. Used in tests only.
  */
-export function clearAllCoverageData(): void {
-  db.delete(coveragePost).run();
-  db.delete(coverageScanRun).run();
-  db.delete(coverageAccountScanState).run();
+export async function clearAllCoverageData(): Promise<void> {
+  await db.delete(coveragePost);
+  await db.delete(coverageScanRun);
+  await db.delete(coverageAccountScanState);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,17 +218,18 @@ export function clearAllCoverageData(): void {
 /**
  * Count posts per platform for a specific brand.
  */
-export function getPostCountByBrandAndPlatform(
+export async function getPostCountByBrandAndPlatform(
   brandId: string,
   platform: DimesPlatform
-): number {
-  const result = db
+): Promise<number> {
+  const rows = await db
     .select({ count: sql<number>`count(*)` })
     .from(coveragePost)
     .where(
       and(eq(coveragePost.brandId, brandId), eq(coveragePost.platform, platform))
     )
-    .get();
+    .limit(1);
+  const result = rows[0];
   return result?.count ?? 0;
 }
 
@@ -247,21 +243,21 @@ export function getPostCountByBrandAndPlatform(
  *
  * If no scan has ever run, all platforms show scanned=false.
  */
-export function getScanEvidence(
+export async function getScanEvidence(
   brandId: string,
   platforms: DimesPlatform[],
   accountIds: Map<DimesPlatform, string>
-): ScanEvidence[] {
+): Promise<ScanEvidence[]> {
   // Get the most recent completed scan run
-  const latestRun = db
+  const latestRunRows = await db
     .select()
     .from(coverageScanRun)
     .where(
       sql`${coverageScanRun.status} IN ('complete', 'partial')`
     )
     .orderBy(desc(coverageScanRun.startedAt))
-    .limit(1)
-    .get();
+    .limit(1);
+  const latestRun = latestRunRows[0];
 
   if (!latestRun) {
     // No scan has ever completed — everything is unknown
@@ -273,11 +269,12 @@ export function getScanEvidence(
     }));
   }
 
-  const errors: ScanError[] = JSON.parse(latestRun.errorsJson);
+  const errors: ScanError[] = latestRun.errorsJson as ScanError[];
 
-  return platforms.map((platform) => {
+  const results: ScanEvidence[] = [];
+  for (const platform of platforms) {
     const accountId = accountIds.get(platform);
-    const postCount = getPostCountByBrandAndPlatform(brandId, platform);
+    const postCount = await getPostCountByBrandAndPlatform(brandId, platform);
 
     // Check if THIS SPECIFIC account had a scan error.
     // IMPORTANT: match by accountId only — not by handle.
@@ -288,34 +285,37 @@ export function getScanEvidence(
     );
 
     if (scanError) {
-      return {
+      results.push({
         platform,
         scanned: false,
         postsFetched: postCount,
         error: scanError.error,
-      };
+      });
+    } else {
+      // No error = scan completed and the latest snapshot is now persisted
+      results.push({
+        platform,
+        scanned: true,
+        postsFetched: postCount,
+        error: null,
+      });
     }
+  }
 
-    // No error = scan completed and the latest snapshot is now persisted
-    return {
-      platform,
-      scanned: true,
-      postsFetched: postCount,
-      error: null,
-    };
-  });
+  return results;
 }
 
 // ---------------------------------------------------------------------------
 // Per-account scan state — durable cursor for fast scans
 // ---------------------------------------------------------------------------
 
-export function getAccountScanState(accountId: string): AccountScanState | null {
-  const row = db
+export async function getAccountScanState(accountId: string): Promise<AccountScanState | null> {
+  const rows = await db
     .select()
     .from(coverageAccountScanState)
     .where(eq(coverageAccountScanState.accountId, accountId))
-    .get();
+    .limit(1);
+  const row = rows[0];
 
   if (!row) return null;
 
@@ -331,15 +331,16 @@ export function getAccountScanState(accountId: string): AccountScanState | null 
   };
 }
 
-export function upsertAccountScanState(state: AccountScanState): void {
-  const existing = db
+export async function upsertAccountScanState(state: AccountScanState): Promise<void> {
+  const existingRows = await db
     .select({ accountId: coverageAccountScanState.accountId })
     .from(coverageAccountScanState)
     .where(eq(coverageAccountScanState.accountId, state.accountId))
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   if (existing) {
-    db.update(coverageAccountScanState)
+    await db.update(coverageAccountScanState)
       .set({
         lastSuccessfulScanAt: state.lastSuccessfulScanAt,
         lastScanMode: state.lastScanMode,
@@ -347,10 +348,9 @@ export function upsertAccountScanState(state: AccountScanState): void {
         latestPostPublishedAt: state.latestPostPublishedAt,
         updatedAt: state.updatedAt,
       })
-      .where(eq(coverageAccountScanState.accountId, state.accountId))
-      .run();
+      .where(eq(coverageAccountScanState.accountId, state.accountId));
   } else {
-    db.insert(coverageAccountScanState)
+    await db.insert(coverageAccountScanState)
       .values({
         accountId: state.accountId,
         platform: state.platform,
@@ -360,13 +360,12 @@ export function upsertAccountScanState(state: AccountScanState): void {
         lastScanPostCount: state.lastScanPostCount,
         latestPostPublishedAt: state.latestPostPublishedAt,
         updatedAt: state.updatedAt,
-      })
-      .run();
+      });
   }
 }
 
-export function getAllAccountScanStates(): AccountScanState[] {
-  const rows = db.select().from(coverageAccountScanState).all();
+export async function getAllAccountScanStates(): Promise<AccountScanState[]> {
+  const rows = await db.select().from(coverageAccountScanState);
   return rows.map((row) => ({
     accountId: row.accountId,
     platform: row.platform as DimesPlatform,

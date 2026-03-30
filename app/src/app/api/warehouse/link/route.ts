@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const id = ensureIdentity(ig, tt);
+    const id = await ensureIdentity(ig, tt);
     return NextResponse.json({ id, action: "linked" });
   } catch (err) {
     console.error("[warehouse/link] Error:", err);

@@ -90,7 +90,7 @@ export async function POST(request: Request) {
           let fallbackToFull = false;
 
           if (scanMode === "fast") {
-            const state = repo.getAccountScanState(account.id);
+            const state = await repo.getAccountScanState(account.id);
 
             if (state?.lastSuccessfulScanAt) {
               // Compute window with safety overlap
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
     }
 
     // Execute scan (ingestion + classification + clustering) — writes to DB
-    const scanRun = executeScanRun(scanType, allFetchedPosts, scanErrors);
+    const scanRun = await executeScanRun(scanType, allFetchedPosts, scanErrors);
 
     // Update per-account scan state — ONLY for successful accounts
     const now = new Date().toISOString();
@@ -193,7 +193,7 @@ export async function POST(request: Request) {
 
       const latestPostPublishedAt = accountPosts[0] || null;
 
-      repo.upsertAccountScanState({
+      await repo.upsertAccountScanState({
         accountId: account.id,
         platform: account.platform,
         brandId: account.brandId,
@@ -206,7 +206,7 @@ export async function POST(request: Request) {
     }
 
     // Read actual post count from DB to confirm truthfulness
-    const totalPostsInDb = repo.getPostCount();
+    const totalPostsInDb = await repo.getPostCount();
 
     // Build honest status message
     let statusLabel: string;
@@ -255,8 +255,8 @@ export async function POST(request: Request) {
 export async function GET() {
   try {
     const config = getDailyScanConfig();
-    const history = repo.getScanHistory();
-    const accountScanStates = repo.getAllAccountScanStates();
+    const history = await repo.getScanHistory();
+    const accountScanStates = await repo.getAllAccountScanStates();
 
     return NextResponse.json({
       config,

@@ -10,7 +10,7 @@ import { reconcileIdentities } from "@/lib/services/identity-service";
 
 export async function GET() {
   try {
-    const result = reconcileIdentities();
+    const result = await reconcileIdentities();
     return NextResponse.json({
       success: true,
       ...result,

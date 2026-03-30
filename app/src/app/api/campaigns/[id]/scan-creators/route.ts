@@ -79,11 +79,8 @@ export async function POST(
         { status: 400 }
       );
     }
-    // Parse custom match keywords
-    let customKeywords: string[] = [];
-    try {
-      customKeywords = JSON.parse((camp.matchKeywords as string) || "[]");
-    } catch { /* ignore */ }
+    // Custom match keywords
+    const customKeywords: string[] = (camp.matchKeywords as string[]) ?? [];
 
     // 3. Scan each creator
     const now = new Date().toISOString();

@@ -103,7 +103,7 @@ async function analyzePlatform(
     let cacheInfo = "";
 
     if (!forceRefresh) {
-      const cached = getCachedProviderResult(platform, username);
+      const cached = await getCachedProviderResult(platform, username);
       if (cached) {
         providerResult = cached.result;
         cacheHit = true;
@@ -111,19 +111,19 @@ async function analyzePlatform(
       } else {
         const provider = getProvider(platform);
         providerResult = await provider.fetchRecentMedia(username);
-        cacheProviderResult(platform, username, providerResult);
+        await cacheProviderResult(platform, username, providerResult);
       }
     } else {
       const provider = getProvider(platform);
       providerResult = await provider.fetchRecentMedia(username);
-      cacheProviderResult(platform, username, providerResult);
+      await cacheProviderResult(platform, username, providerResult);
     }
 
     // ── M2: Persist items to warehouse ────────────────────────────────────
-    ingestContentItems(providerResult.items, platform, username);
+    await ingestContentItems(providerResult.items, platform, username);
 
     // ── M3: Update scan profile ──────────────────────────────────────────
-    updateScanProfile(platform, username, providerResult);
+    await updateScanProfile(platform, username, providerResult);
 
     let benchmark;
     if (platform === "tiktok") {

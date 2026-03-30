@@ -1,47 +1,100 @@
 /**
- * Database Schema — Drizzle ORM + SQLite
+ * Database Schema — Drizzle ORM + PostgreSQL
  *
  * Core tables for the multi-user team workspace:
  * - user / session / account / verification (Better Auth managed)
  * - team, team_membership, team_join_request (custom domain)
  * - analysis_run (team-scoped history)
+ * - campaign, campaign_creator, campaign_deliverable
+ * - coverage_scan_run, coverage_post, coverage_account_scan_state
+ * - creator_scan_cache, creator_media_item, creator_scan_profile
+ * - influencer_identity
  */
 
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import {
+  pgTable,
+  pgEnum,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  jsonb,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+export const systemRoleEnum = pgEnum("system_role", ["system_admin", "user"]);
+export const approvalStatusEnum = pgEnum("approval_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "suspended",
+]);
+export const teamRoleEnum = pgEnum("team_role", ["team_admin", "member"]);
+export const requestStatusEnum = pgEnum("request_status", [
+  "pending",
+  "approved",
+  "rejected",
+]);
+export const runStatusEnum = pgEnum("run_status", [
+  "running",
+  "complete",
+  "partial",
+  "error",
+]);
+export const campaignStatusEnum = pgEnum("campaign_status", [
+  "draft",
+  "active",
+  "monitoring",
+  "completed",
+  "archived",
+]);
+export const creatorRoleEnum = pgEnum("creator_role", [
+  "primary",
+  "secondary",
+  "shortlisted",
+]);
+export const platformEnum = pgEnum("platform", ["instagram", "tiktok"]);
+export const matchTypeEnum = pgEnum("match_type", ["auto", "manual"]);
+export const scanTypeEnum = pgEnum("scan_type", [
+  "backfill",
+  "daily",
+  "full",
+  "fast",
+]);
 
 // ---------------------------------------------------------------------------
 // Better Auth core tables
 // (Better Auth expects these exact names and columns)
 // ---------------------------------------------------------------------------
 
-export const user = sqliteTable("user", {
+export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  emailVerified: integer("emailVerified", { mode: "boolean" }).notNull().default(false),
+  emailVerified: boolean("emailVerified").notNull().default(false),
   image: text("image"),
-  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 
   // ── Custom fields ──────────────────────────────────────────
-  systemRole: text("systemRole", { enum: ["system_admin", "user"] })
-    .notNull()
-    .default("user"),
-  approvalStatus: text("approvalStatus", {
-    enum: ["pending", "approved", "rejected", "suspended"],
-  })
+  systemRole: systemRoleEnum("systemRole").notNull().default("user"),
+  approvalStatus: approvalStatusEnum("approvalStatus")
     .notNull()
     .default("pending"),
   approvedBy: text("approvedBy"),
-  approvedAt: integer("approvedAt", { mode: "timestamp" }),
+  approvedAt: timestamp("approvedAt"),
 });
 
-export const session = sqliteTable("session", {
+export const session = pgTable("session", {
   id: text("id").primaryKey(),
-  expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
   token: text("token").notNull().unique(),
-  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
   userId: text("userId")
@@ -49,7 +102,7 @@ export const session = sqliteTable("session", {
     .references(() => user.id),
 });
 
-export const account = sqliteTable("account", {
+export const account = pgTable("account", {
   id: text("id").primaryKey(),
   accountId: text("accountId").notNull(),
   providerId: text("providerId").notNull(),
@@ -59,36 +112,36 @@ export const account = sqliteTable("account", {
   accessToken: text("accessToken"),
   refreshToken: text("refreshToken"),
   idToken: text("idToken"),
-  accessTokenExpiresAt: integer("accessTokenExpiresAt", { mode: "timestamp" }),
-  refreshTokenExpiresAt: integer("refreshTokenExpiresAt", { mode: "timestamp" }),
+  accessTokenExpiresAt: timestamp("accessTokenExpiresAt"),
+  refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt"),
   scope: text("scope"),
   password: text("password"),
-  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
 
-export const verification = sqliteTable("verification", {
+export const verification = pgTable("verification", {
   id: text("id").primaryKey(),
   identifier: text("identifier").notNull(),
   value: text("value").notNull(),
-  expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
-  createdAt: integer("createdAt", { mode: "timestamp" }),
-  updatedAt: integer("updatedAt", { mode: "timestamp" }),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt"),
+  updatedAt: timestamp("updatedAt"),
 });
 
 // ---------------------------------------------------------------------------
 // Team tables (custom domain)
 // ---------------------------------------------------------------------------
 
-export const team = sqliteTable("team", {
+export const team = pgTable("team", {
   id: text("id").primaryKey(),
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
-export const teamMembership = sqliteTable("team_membership", {
+export const teamMembership = pgTable("team_membership", {
   id: text("id").primaryKey(),
   userId: text("userId")
     .notNull()
@@ -96,14 +149,12 @@ export const teamMembership = sqliteTable("team_membership", {
   teamId: text("teamId")
     .notNull()
     .references(() => team.id),
-  role: text("role", { enum: ["team_admin", "member"] })
-    .notNull()
-    .default("member"),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  joinedAt: integer("joinedAt", { mode: "timestamp" }).notNull(),
+  role: teamRoleEnum("role").notNull().default("member"),
+  active: boolean("active").notNull().default(true),
+  joinedAt: timestamp("joinedAt").notNull().defaultNow(),
 });
 
-export const teamJoinRequest = sqliteTable("team_join_request", {
+export const teamJoinRequest = pgTable("team_join_request", {
   id: text("id").primaryKey(),
   userId: text("userId")
     .notNull()
@@ -111,20 +162,18 @@ export const teamJoinRequest = sqliteTable("team_join_request", {
   teamId: text("teamId")
     .notNull()
     .references(() => team.id),
-  status: text("status", { enum: ["pending", "approved", "rejected"] })
-    .notNull()
-    .default("pending"),
+  status: requestStatusEnum("status").notNull().default("pending"),
   reviewedBy: text("reviewedBy"),
-  reviewedAt: integer("reviewedAt", { mode: "timestamp" }),
+  reviewedAt: timestamp("reviewedAt"),
   rejectionReason: text("rejectionReason"),
-  createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
 // ---------------------------------------------------------------------------
 // Analysis run history (team-scoped)
 // ---------------------------------------------------------------------------
 
-export const analysisRun = sqliteTable("analysis_run", {
+export const analysisRun = pgTable("analysis_run", {
   id: text("id").primaryKey(),
   teamId: text("teamId")
     .notNull()
@@ -132,44 +181,38 @@ export const analysisRun = sqliteTable("analysis_run", {
   userId: text("userId")
     .notNull()
     .references(() => user.id),
-  status: text("status", {
-    enum: ["running", "complete", "partial", "error"],
-  }).notNull(),
+  status: runStatusEnum("status").notNull(),
   totalRows: integer("totalRows").notNull().default(0),
   completeRows: integer("completeRows").notNull().default(0),
   partialRows: integer("partialRows").notNull().default(0),
   errorRows: integer("errorRows").notNull().default(0),
   /** JSON: array of { instagram?, tiktok?, label? } */
-  inputSummary: text("inputSummary").notNull().default("[]"),
+  inputSummary: jsonb("inputSummary").notNull().default([]),
   /** JSON: BatchRowResult[] — derived analysis snapshot */
-  resultSnapshot: text("resultSnapshot").notNull().default("[]"),
-  startedAt: integer("startedAt", { mode: "timestamp" }).notNull(),
-  completedAt: integer("completedAt", { mode: "timestamp" }),
+  resultSnapshot: jsonb("resultSnapshot").notNull().default([]),
+  startedAt: timestamp("startedAt").notNull().defaultNow(),
+  completedAt: timestamp("completedAt"),
   /** Snapshot schema version — allows migration of stored result formats */
   schemaVersion: integer("schemaVersion").notNull().default(1),
   /** Free-text annotation — optional context from the user */
   note: text("note"),
   /** Soft-delete / archive flag */
-  archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+  archived: boolean("archived").notNull().default(false),
   /** JSON array of string tags for campaign/client grouping */
-  tags: text("tags").notNull().default("[]"),
+  tags: jsonb("tags").notNull().default([]),
 });
 
 // ---------------------------------------------------------------------------
 // Campaign entity (connects Workspace ↔ Coverage)
 // ---------------------------------------------------------------------------
 
-export const campaign = sqliteTable("campaign", {
+export const campaign = pgTable("campaign", {
   id: text("id").primaryKey(),
   teamId: text("teamId")
     .notNull()
     .references(() => team.id),
   name: text("name").notNull(),
-  status: text("status", {
-    enum: ["draft", "active", "monitoring", "completed", "archived"],
-  })
-    .notNull()
-    .default("draft"),
+  status: campaignStatusEnum("status").notNull().default("draft"),
   /** Coverage brand ID (e.g. "brand_dimes_tr") */
   brandId: text("brandId"),
   startDate: text("startDate"),
@@ -178,11 +221,11 @@ export const campaign = sqliteTable("campaign", {
   budgetAmount: integer("budgetAmount"),
   budgetCurrency: text("budgetCurrency"),
   /** JSON array of string tags */
-  tags: text("tags").notNull().default("[]"),
+  tags: jsonb("tags").notNull().default([]),
   /** JSON array of custom match keywords/hashtags for deliverable detection */
-  matchKeywords: text("matchKeywords").notNull().default("[]"),
+  matchKeywords: jsonb("matchKeywords").notNull().default([]),
   /** JSON: extensible metadata (webhook config, scan preferences, etc.) */
-  meta: text("meta").notNull().default("{}"),
+  meta: jsonb("meta").notNull().default({}),
   createdAt: text("createdAt").notNull(),
   updatedAt: text("updatedAt").notNull(),
   createdBy: text("createdBy")
@@ -190,7 +233,7 @@ export const campaign = sqliteTable("campaign", {
     .references(() => user.id),
 });
 
-export const campaignCreator = sqliteTable("campaign_creator", {
+export const campaignCreator = pgTable("campaign_creator", {
   id: text("id").primaryKey(),
   campaignId: text("campaignId")
     .notNull()
@@ -198,9 +241,7 @@ export const campaignCreator = sqliteTable("campaign_creator", {
   instagramHandle: text("instagramHandle"),
   tiktokHandle: text("tiktokHandle"),
   label: text("label"),
-  role: text("role", { enum: ["primary", "secondary", "shortlisted"] })
-    .notNull()
-    .default("primary"),
+  role: creatorRoleEnum("role").notNull().default("primary"),
   /** Link to the analysis_run that evaluated this creator */
   analysisRunId: text("analysisRunId"),
   budgetAmount: integer("budgetAmount"),
@@ -209,7 +250,7 @@ export const campaignCreator = sqliteTable("campaign_creator", {
   addedAt: text("addedAt").notNull(),
 });
 
-export const campaignDeliverable = sqliteTable("campaign_deliverable", {
+export const campaignDeliverable = pgTable("campaign_deliverable", {
   id: text("id").primaryKey(),
   campaignId: text("campaignId")
     .notNull()
@@ -217,7 +258,7 @@ export const campaignDeliverable = sqliteTable("campaign_deliverable", {
   creatorId: text("creatorId")
     .notNull()
     .references(() => campaignCreator.id),
-  platform: text("platform", { enum: ["instagram", "tiktok"] }).notNull(),
+  platform: platformEnum("platform").notNull(),
   postId: text("postId").notNull(),
   permalink: text("permalink").notNull(),
   caption: text("caption"),
@@ -227,9 +268,7 @@ export const campaignDeliverable = sqliteTable("campaign_deliverable", {
   publishedAt: text("publishedAt"),
   contentKind: text("contentKind"),
   /** "auto" = matched by keyword/tag, "manual" = operator added manually */
-  matchType: text("matchType", { enum: ["auto", "manual"] })
-    .notNull()
-    .default("auto"),
+  matchType: matchTypeEnum("matchType").notNull().default("auto"),
   /** Why it matched (e.g., "caption_keyword: dimes", "tagged_user: dimes.tr") */
   matchReason: text("matchReason"),
   detectedAt: text("detectedAt").notNull(),
@@ -237,15 +276,12 @@ export const campaignDeliverable = sqliteTable("campaign_deliverable", {
 
 // ---------------------------------------------------------------------------
 // Coverage product tables (Dimes Content Coverage Intelligence)
-// These are SEPARATE from the benchmark product above.
 // ---------------------------------------------------------------------------
 
-export const coverageScanRun = sqliteTable("coverage_scan_run", {
+export const coverageScanRun = pgTable("coverage_scan_run", {
   id: text("id").primaryKey(),
-  type: text("type", { enum: ["backfill", "daily", "full", "fast"] }).notNull(),
-  status: text("status", {
-    enum: ["running", "complete", "partial", "error"],
-  }).notNull(),
+  type: scanTypeEnum("type").notNull(),
+  status: runStatusEnum("status").notNull(),
   startedAt: text("startedAt").notNull(),
   completedAt: text("completedAt"),
   accountsScanned: integer("accountsScanned").notNull().default(0),
@@ -253,10 +289,10 @@ export const coverageScanRun = sqliteTable("coverage_scan_run", {
   newPostsIngested: integer("newPostsIngested").notNull().default(0),
   clustersCreated: integer("clustersCreated").notNull().default(0),
   /** JSON: ScanError[] */
-  errorsJson: text("errorsJson").notNull().default("[]"),
+  errorsJson: jsonb("errorsJson").notNull().default([]),
 });
 
-export const coveragePost = sqliteTable("coverage_post", {
+export const coveragePost = pgTable("coverage_post", {
   id: text("id").primaryKey(),
   scanRunId: text("scanRunId").notNull(),
   accountId: text("accountId").notNull(),
@@ -266,42 +302,45 @@ export const coveragePost = sqliteTable("coverage_post", {
   permalink: text("permalink").notNull(),
   caption: text("caption"),
   normalizedCaption: text("normalizedCaption"),
-  hashtagsJson: text("hashtagsJson").notNull().default("[]"),
-  mentionsJson: text("mentionsJson").notNull().default("[]"),
+  hashtagsJson: jsonb("hashtagsJson").notNull().default([]),
+  mentionsJson: jsonb("mentionsJson").notNull().default([]),
   publishedAt: text("publishedAt").notNull(),
   fetchedAt: text("fetchedAt").notNull(),
   mediaType: text("mediaType"),
   thumbnailUrl: text("thumbnailUrl"),
   classification: text("classification").notNull(),
-  classificationSignalsJson: text("classificationSignalsJson").notNull().default("[]"),
+  classificationSignalsJson: jsonb("classificationSignalsJson")
+    .notNull()
+    .default([]),
   clusterFingerprint: text("clusterFingerprint"),
 });
 
 // Per-account scan state — durable cursor for fast scans
-export const coverageAccountScanState = sqliteTable("coverage_account_scan_state", {
-  accountId: text("accountId").primaryKey(),
-  platform: text("platform").notNull(),
-  brandId: text("brandId").notNull(),
-  lastSuccessfulScanAt: text("lastSuccessfulScanAt"),
-  lastScanMode: text("lastScanMode", { enum: ["backfill", "daily", "full", "fast"] }),
-  lastScanPostCount: integer("lastScanPostCount").notNull().default(0),
-  latestPostPublishedAt: text("latestPostPublishedAt"),
-  updatedAt: text("updatedAt").notNull(),
-});
+export const coverageAccountScanState = pgTable(
+  "coverage_account_scan_state",
+  {
+    accountId: text("accountId").primaryKey(),
+    platform: text("platform").notNull(),
+    brandId: text("brandId").notNull(),
+    lastSuccessfulScanAt: text("lastSuccessfulScanAt"),
+    lastScanMode: scanTypeEnum("lastScanMode"),
+    lastScanPostCount: integer("lastScanPostCount").notNull().default(0),
+    latestPostPublishedAt: text("latestPostPublishedAt"),
+    updatedAt: text("updatedAt").notNull(),
+  }
+);
 
 // ---------------------------------------------------------------------------
 // Workspace Scan Cache — Durable provider result cache
-// Eliminates redundant Apify/provider calls by storing ProviderResult per
-// (platform, username) with tiered freshness logic.
 // ---------------------------------------------------------------------------
 
-export const creatorScanCache = sqliteTable("creator_scan_cache", {
+export const creatorScanCache = pgTable("creator_scan_cache", {
   id: text("id").primaryKey(),
-  platform: text("platform", { enum: ["instagram", "tiktok"] }).notNull(),
+  platform: platformEnum("platform").notNull(),
   /** Normalized lowercase username */
   username: text("username").notNull(),
   /** JSON: serialized ProviderResult (items, profile, totalFetched, source) */
-  providerResultJson: text("providerResultJson").notNull(),
+  providerResultJson: jsonb("providerResultJson").notNull(),
   /** Provider source label, e.g. "instagram-apify", "tiktok-apify" */
   providerSource: text("providerSource").notNull(),
   /** Number of content items in the cached result */
@@ -314,12 +353,11 @@ export const creatorScanCache = sqliteTable("creator_scan_cache", {
 
 // ---------------------------------------------------------------------------
 // M2 — Normalized Media Warehouse
-// Individual content items with dedup + metric tracking over time.
 // ---------------------------------------------------------------------------
 
-export const creatorMediaItem = sqliteTable("creator_media_item", {
+export const creatorMediaItem = pgTable("creator_media_item", {
   id: text("id").primaryKey(),
-  platform: text("platform", { enum: ["instagram", "tiktok"] }).notNull(),
+  platform: platformEnum("platform").notNull(),
   /** Normalized lowercase creator username */
   username: text("username").notNull(),
   /** Platform-native post ID (e.g. Instagram shortcode, TikTok video ID) */
@@ -339,11 +377,11 @@ export const creatorMediaItem = sqliteTable("creator_media_item", {
   /** Latest comment count */
   comments: integer("comments"),
   /** Is this content classified as commercial? */
-  isCommercial: integer("isCommercial", { mode: "boolean" }).notNull().default(false),
+  isCommercial: boolean("isCommercial").notNull().default(false),
   /** JSON: commercialMetadata from provider */
-  commercialMetadataJson: text("commercialMetadataJson"),
+  commercialMetadataJson: jsonb("commercialMetadataJson"),
   /** JSON: raw provider metadata snapshot */
-  rawMetadataJson: text("rawMetadataJson"),
+  rawMetadataJson: jsonb("rawMetadataJson"),
   /** ISO: when this item was first seen by our system */
   firstSeenAt: text("firstSeenAt").notNull(),
   /** ISO: when metrics were last refreshed */
@@ -356,12 +394,11 @@ export const creatorMediaItem = sqliteTable("creator_media_item", {
 
 // ---------------------------------------------------------------------------
 // M3 — Creator Scan Profile (Adaptive Re-Scan Policy)
-// Per-creator metadata: posting frequency, scan history, optimal TTL.
 // ---------------------------------------------------------------------------
 
-export const creatorScanProfile = sqliteTable("creator_scan_profile", {
+export const creatorScanProfile = pgTable("creator_scan_profile", {
   id: text("id").primaryKey(),
-  platform: text("platform", { enum: ["instagram", "tiktok"] }).notNull(),
+  platform: platformEnum("platform").notNull(),
   /** Normalized lowercase username */
   username: text("username").notNull(),
   /** Total items seen across all scans */
@@ -381,7 +418,7 @@ export const creatorScanProfile = sqliteTable("creator_scan_profile", {
   /** ISO: earliest post published date we've seen */
   earliestPostAt: text("earliestPostAt"),
   /** JSON: profile summary snapshot (followers, name, etc.) */
-  profileSnapshotJson: text("profileSnapshotJson"),
+  profileSnapshotJson: jsonb("profileSnapshotJson"),
   updatedAt: text("updatedAt").notNull(),
 });
 
@@ -389,7 +426,7 @@ export const creatorScanProfile = sqliteTable("creator_scan_profile", {
 // Influencer Identity — Links IG + TT accounts as one person
 // ---------------------------------------------------------------------------
 
-export const influencerIdentity = sqliteTable("influencer_identity", {
+export const influencerIdentity = pgTable("influencer_identity", {
   id: text("id").primaryKey(),
   /** Normalized lowercase IG username (nullable if TT-only) */
   instagramUsername: text("instagramUsername"),

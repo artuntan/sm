@@ -8,17 +8,17 @@ jest.mock("@/lib/providers/factory", () => ({
 }));
 
 jest.mock("@/lib/services/scan-cache-service", () => ({
-  getCachedProviderResult: jest.fn().mockReturnValue(null),
-  cacheProviderResult: jest.fn(),
+  getCachedProviderResult: jest.fn().mockResolvedValue(null),
+  cacheProviderResult: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock("@/lib/services/media-warehouse-service", () => ({
-  ingestContentItems: jest.fn().mockReturnValue({ newItems: 0, updatedItems: 0, unchangedItems: 0, totalProcessed: 0 }),
+  ingestContentItems: jest.fn().mockResolvedValue({ newItems: 0, updatedItems: 0, unchangedItems: 0, totalProcessed: 0 }),
 }));
 
 jest.mock("@/lib/services/adaptive-scan-service", () => ({
-  updateScanProfile: jest.fn().mockReturnValue({ postsPerWeek: 0, frequencyTier: "unknown", adaptiveTtlMs: 86400000 }),
-  getAdaptiveTtl: jest.fn().mockReturnValue(86400000),
+  updateScanProfile: jest.fn().mockResolvedValue({ postsPerWeek: 0, frequencyTier: "unknown", adaptiveTtlMs: 86400000 }),
+  getAdaptiveTtl: jest.fn().mockResolvedValue(86400000),
 }));
 
 import { POST } from "@/app/api/analyze/route";
@@ -130,7 +130,7 @@ function mockInstaProvider() {
 describe("POST /api/analyze — platform-aware", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetCachedResult.mockReturnValue(null);
+    mockGetCachedResult.mockResolvedValue(null);
   });
 
   it("accepts platform=tiktok and returns TikTok result", async () => {

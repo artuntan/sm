@@ -92,8 +92,7 @@ export async function GET(request: NextRequest) {
   const points: ComparisonPoint[] = [];
 
   for (const run of runs) {
-    let snapshot: SnapshotRow[] = [];
-    try { snapshot = JSON.parse(run.resultSnapshot as string); } catch { continue; }
+    const snapshot: SnapshotRow[] = (run.resultSnapshot as SnapshotRow[]) || [];
 
     const runDate = run.startedAt
       ? new Date(run.startedAt as unknown as number * 1000).toISOString()

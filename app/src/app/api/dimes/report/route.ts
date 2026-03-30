@@ -39,8 +39,8 @@ export async function GET(request: Request) {
     }
 
     // Read all posts from DB
-    const allPosts = repo.getAllPosts(since || undefined);
-    const totalPostCount = repo.getPostCount();
+    const allPosts = await repo.getAllPosts(since || undefined);
+    const totalPostCount = await repo.getPostCount();
 
     // Build per-brand reports
     const brandReports = [];
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       const accountIdMap = new Map(
         brand.accounts.map((a) => [a.platform, a.id] as const)
       );
-      const evidence = repo.getScanEvidence(brand.id, allPlatforms, accountIdMap);
+      const evidence = await repo.getScanEvidence(brand.id, allPlatforms, accountIdMap);
 
       // Compute gaps with evidence-based status
       const gaps = analyzeGaps(clusters, brandPosts, brand, evidence);
@@ -138,7 +138,7 @@ export async function GET(request: Request) {
     }
 
     // Get recent scan history
-    const recentScans = repo.getScanHistory(5);
+    const recentScans = await repo.getScanHistory(5);
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),

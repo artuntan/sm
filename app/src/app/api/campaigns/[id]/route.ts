@@ -59,8 +59,8 @@ export async function GET(
 
     return NextResponse.json({
       ...camp,
-      tags: JSON.parse((camp.tags as string) ?? "[]"),
-      matchKeywords: JSON.parse((camp.matchKeywords as string) ?? "[]"),
+      tags: camp.tags ?? [],
+      matchKeywords: camp.matchKeywords ?? [],
       creators,
       deliverables,
     });
@@ -174,8 +174,8 @@ export async function PATCH(
     if (updates.notes !== undefined) updateValues.notes = updates.notes;
     if (updates.budgetAmount !== undefined) updateValues.budgetAmount = updates.budgetAmount;
     if (updates.budgetCurrency !== undefined) updateValues.budgetCurrency = updates.budgetCurrency;
-    if (updates.tags !== undefined) updateValues.tags = JSON.stringify(updates.tags);
-    if (updates.matchKeywords !== undefined) updateValues.matchKeywords = JSON.stringify(updates.matchKeywords);
+    if (updates.tags !== undefined) updateValues.tags = updates.tags;
+    if (updates.matchKeywords !== undefined) updateValues.matchKeywords = updates.matchKeywords;
     if (updates.meta !== undefined) updateValues.meta = updates.meta;
 
     await db.update(campaign).set(updateValues).where(eq(campaign.id, id));
@@ -199,8 +199,8 @@ export async function PATCH(
 
     return NextResponse.json({
       ...updated[0],
-      tags: JSON.parse((updated[0]?.tags as string) ?? "[]"),
-      matchKeywords: JSON.parse((updated[0]?.matchKeywords as string) ?? "[]"),
+      tags: updated[0]?.tags ?? [],
+      matchKeywords: updated[0]?.matchKeywords ?? [],
       creators,
       deliverables,
     });

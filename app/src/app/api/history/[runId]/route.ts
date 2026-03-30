@@ -61,7 +61,7 @@ export async function GET(
   const run = runs[0];
   return NextResponse.json({
     ...run,
-    inputSummary: JSON.parse(run.inputSummary as string),
-    resultSnapshot: JSON.parse(run.resultSnapshot as string),
+    inputSummary: run.inputSummary,
+    resultSnapshot: run.resultSnapshot,
   });
 }
