@@ -125,15 +125,15 @@ export function ensureIdentity(
 
   return id;
 }
-
 /**
  * Reconcile all existing scan data into proper identity rows.
  *
- * Two-phase approach:
- * Phase 1: Read pair provenance from analysis_run.inputSummary — this contains
- *          the exact {instagram, tiktok} pairs from every batch input. Call
- *          ensureIdentity(ig, tt) for each, which will merge split rows.
- * Phase 2: Ensure every orphan platform account (scanned but not linked)
+ * Three-phase approach:
+ * Phase 1: Collect ALL pair evidence from analysis_run.inputSummary, then use
+ *          majority-vote to determine the canonical pairing for each handle.
+ *          This prevents contamination from occasional bad/typo data in history.
+ * Phase 2: Apply canonical pairs via ensureIdentity().
+ * Phase 3: Ensure every orphan platform account (scanned but not linked)
  *          has at least a single-platform identity row.
  *
  * Returns a summary of operations performed.
@@ -142,22 +142,36 @@ export function reconcileIdentities(): {
   created: number;
   merged: number;
   alreadyOk: number;
+  skipped: number;
   details: string[];
 } {
   const details: string[] = [];
   let created = 0;
   let merged = 0;
   let alreadyOk = 0;
+  let skipped = 0;
 
-  // ── Phase 1: Pair provenance from analysis_run.inputSummary ──
-  // Each inputSummary is a JSON array of {instagram?, tiktok?, label?}
-  // Process most recent runs first so latest evidence takes precedence
-  const runs = db.select({ inputSummary: analysisRun.inputSummary })
-    .from(analysisRun)
-    .all()
-    .reverse();
+  // ── Phase 1: Collect pair evidence and compute majority vote ──
+  // For each IG handle, tally how many runs pair it with each TT handle
+  const igToTtVotes = new Map<string, Map<string, number>>();
+  // For each TT handle, tally how many runs pair it with each IG handle
+  const ttToIgVotes = new Map<string, Map<string, number>>();
+  // Track all handles that have real scan data
+  const scannedIg = new Set<string>();
+  const scannedTt = new Set<string>();
 
-  const processedPairs = new Set<string>();
+  const allCache = db.select().from(creatorScanCache).all();
+  const allProfiles = db.select().from(creatorScanProfile).all();
+  for (const c of allCache) {
+    if (c.platform === "instagram") scannedIg.add(c.username);
+    if (c.platform === "tiktok") scannedTt.add(c.username);
+  }
+  for (const p of allProfiles) {
+    if (p.platform === "instagram") scannedIg.add(p.username);
+    if (p.platform === "tiktok") scannedTt.add(p.username);
+  }
+
+  const runs = db.select({ inputSummary: analysisRun.inputSummary }).from(analysisRun).all();
 
   for (const run of runs) {
     let rows: Array<{ instagram?: string; tiktok?: string }>;
@@ -170,57 +184,90 @@ export function reconcileIdentities(): {
     for (const row of rows) {
       const ig = row.instagram?.toLowerCase().trim() || null;
       const tt = row.tiktok?.toLowerCase().trim() || null;
-      if (!ig && !tt) continue;
+      if (!ig || !tt) continue; // Only count paired rows for voting
 
-      const pairKey = `${ig || ""}|${tt || ""}`;
-      if (processedPairs.has(pairKey)) continue;
-      processedPairs.add(pairKey);
+      // Sanity: skip if IG handle is actually a known TT-only username, or vice versa
+      // This catches swapped-column errors (e.g. ig=bege, tt=berkcan when bege is a TT handle)
+      if (scannedTt.has(ig) && !scannedIg.has(ig)) continue;
+      if (scannedIg.has(tt) && !scannedTt.has(tt)) continue;
 
-      // Check current state before calling ensureIdentity
-      const byIg = ig
-        ? db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, ig)).get()
-        : undefined;
-      const byTt = tt
-        ? db.select().from(influencerIdentity).where(eq(influencerIdentity.tiktokUsername, tt)).get()
-        : undefined;
+      // Tally IG→TT vote
+      if (!igToTtVotes.has(ig)) igToTtVotes.set(ig, new Map());
+      const igVotes = igToTtVotes.get(ig)!;
+      igVotes.set(tt, (igVotes.get(tt) || 0) + 1);
 
-      if (ig && tt) {
-        // Paired row — this is the key case
-        if (byIg && byTt && byIg.id === byTt.id) {
-          alreadyOk++;
-        } else if (byIg && byTt && byIg.id !== byTt.id) {
-          // Split rows exist — merge them
-          ensureIdentity(ig, tt);
-          merged++;
-          details.push(`merged: ig=${ig} + tt=${tt}`);
-        } else if (byIg || byTt) {
-          // One side exists — update with the other
-          ensureIdentity(ig, tt);
-          merged++;
-          details.push(`linked: ig=${ig} + tt=${tt}`);
-        } else {
-          // Neither exists — create paired identity
-          ensureIdentity(ig, tt);
-          created++;
-          details.push(`created pair: ig=${ig} + tt=${tt}`);
-        }
-      } else {
-        // Single-platform row
-        if (byIg || byTt) {
-          alreadyOk++;
-        } else {
-          ensureIdentity(ig, tt);
-          created++;
-          details.push(`created single: ${ig ? `ig=${ig}` : `tt=${tt}`}`);
-        }
-      }
+      // Tally TT→IG vote
+      if (!ttToIgVotes.has(tt)) ttToIgVotes.set(tt, new Map());
+      const ttVotes = ttToIgVotes.get(tt)!;
+      ttVotes.set(ig, (ttVotes.get(ig) || 0) + 1);
     }
   }
 
-  // ── Phase 2: Orphan sweep — platform accounts not covered by any identity ──
-  const allCache = db.select().from(creatorScanCache).all();
-  const allProfiles = db.select().from(creatorScanProfile).all();
+  // Resolve canonical pairs by majority vote
+  const canonicalPairs = new Map<string, string>(); // ig → tt (canonical)
+  const processedIg = new Set<string>();
+  const processedTt = new Set<string>();
 
+  // For each IG handle, find the TT handle with the most votes
+  for (const [ig, ttVotes] of igToTtVotes.entries()) {
+    let bestTt = "";
+    let bestCount = 0;
+    for (const [tt, count] of ttVotes.entries()) {
+      if (count > bestCount) {
+        bestTt = tt;
+        bestCount = count;
+      }
+    }
+
+    if (!bestTt) continue;
+
+    // Verify the TT side also agrees: the IG handle should be the top vote for this TT
+    const reverseVotes = ttToIgVotes.get(bestTt);
+    if (reverseVotes) {
+      let bestReverseIg = "";
+      let bestReverseCount = 0;
+      for (const [rIg, count] of reverseVotes.entries()) {
+        if (count > bestReverseCount) {
+          bestReverseIg = rIg;
+          bestReverseCount = count;
+        }
+      }
+      // If TT's top IG vote disagrees with this IG handle, skip (conflicting evidence)
+      if (bestReverseIg && bestReverseIg !== ig) {
+        details.push(`conflict: ig=${ig}→tt=${bestTt} but tt=${bestTt}→ig=${bestReverseIg}, skipped`);
+        skipped++;
+        continue;
+      }
+    }
+
+    canonicalPairs.set(ig, bestTt);
+    processedIg.add(ig);
+    processedTt.add(bestTt);
+  }
+
+  // ── Phase 2: Apply canonical pairs ──
+  for (const [ig, tt] of canonicalPairs.entries()) {
+    const byIg = db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, ig)).get();
+    const byTt = db.select().from(influencerIdentity).where(eq(influencerIdentity.tiktokUsername, tt)).get();
+
+    if (byIg && byTt && byIg.id === byTt.id) {
+      alreadyOk++;
+    } else if (byIg && byTt && byIg.id !== byTt.id) {
+      ensureIdentity(ig, tt);
+      merged++;
+      details.push(`merged: ig=${ig} + tt=${tt}`);
+    } else if (byIg || byTt) {
+      ensureIdentity(ig, tt);
+      merged++;
+      details.push(`linked: ig=${ig} + tt=${tt}`);
+    } else {
+      ensureIdentity(ig, tt);
+      created++;
+      details.push(`created pair: ig=${ig} + tt=${tt}`);
+    }
+  }
+
+  // ── Phase 3: Orphan sweep — platform accounts not covered by any identity ──
   const orphanKeys = new Set<string>();
   for (const c of allCache) orphanKeys.add(`${c.platform}:${c.username}`);
   for (const p of allProfiles) orphanKeys.add(`${p.platform}:${p.username}`);
@@ -228,7 +275,6 @@ export function reconcileIdentities(): {
   for (const key of orphanKeys) {
     const [platform, username] = key.split(":");
 
-    // Check if this account already has an identity
     const hasIdentity =
       platform === "instagram"
         ? db.select().from(influencerIdentity).where(eq(influencerIdentity.instagramUsername, username)).get()
@@ -236,7 +282,6 @@ export function reconcileIdentities(): {
 
     if (hasIdentity) continue;
 
-    // No identity for this orphan — create one
     const ig = platform === "instagram" ? username : null;
     const tt = platform === "tiktok" ? username : null;
     ensureIdentity(ig, tt);
@@ -244,6 +289,6 @@ export function reconcileIdentities(): {
     details.push(`orphan: ${platform}=${username}`);
   }
 
-  return { created, merged, alreadyOk, details };
+  return { created, merged, alreadyOk, skipped, details };
 }
 
