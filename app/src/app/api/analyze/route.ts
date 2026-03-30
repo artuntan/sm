@@ -6,19 +6,22 @@
  * Returns dual benchmark AnalyzeResult.
  *
  * Backward compatible: if platform is omitted, defaults to "instagram".
+ * Delegates to analyze-service for the core pipeline.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { requireApproved } from "@/lib/auth/guards";
 import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
 import { z } from "zod";
 import { normalizeUsername } from "@/lib/domain/normalize";
-import { selectDualBenchmark, selectDualBenchmarkFromItems } from "@/lib/domain/selection";
-import type { AnalyzeResult, AnalyzeError, Platform } from "@/lib/domain/types";
-import { getProvider } from "@/lib/providers/factory";
+import type { AnalyzeResult, AnalyzeError } from "@/lib/domain/types";
 import { ProviderError } from "@/lib/providers/interface";
-import { getCachedProviderResult, cacheProviderResult } from "@/lib/services/scan-cache-service";
-import { ingestContentItems } from "@/lib/services/media-warehouse-service";
-import { updateScanProfile } from "@/lib/services/adaptive-scan-service";
+import {
+  validateUsername,
+  resolveProviderData,
+  runBenchmarkPipeline,
+  getLimitations,
+  persistAndUpdateProfile,
+} from "@/lib/services/analyze-service";
 
 const AnalyzeRequestSchema = z.object({
   platform: z
@@ -34,27 +37,6 @@ const AnalyzeRequestSchema = z.object({
 
 function errorResponse(error: AnalyzeError): NextResponse {
   return NextResponse.json({ error }, { status: error.statusCode });
-}
-
-/**
- * Platform-specific username validation.
- * Instagram: [a-z0-9._]{1,30}
- * TikTok: [a-z0-9._]{1,24} (TikTok allows up to 24 chars)
- */
-function validateUsername(
-  username: string,
-  platform: Platform
-): string | null {
-  if (platform === "tiktok") {
-    if (!/^[a-z0-9._]{1,24}$/.test(username)) {
-      return "Invalid TikTok username format. Use only letters, numbers, dots, and underscores.";
-    }
-  } else {
-    if (!/^[a-z0-9._]{1,30}$/.test(username)) {
-      return "Invalid Instagram username format. Use only letters, numbers, dots, and underscores.";
-    }
-  }
-  return null;
 }
 
 export async function POST(request: NextRequest) {
@@ -104,56 +86,13 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Check durable cache (unless force refresh)
-  if (!forceRefresh) {
-    const cached = await getCachedProviderResult(platform, username);
-    if (cached) {
-      // Re-run benchmark pipeline on cached raw items (always uses latest code)
-      let benchmark;
-      if (platform === "tiktok") {
-        benchmark = selectDualBenchmarkFromItems(cached.result.items, platform);
-      } else {
-        benchmark = cached.result.reels
-          ? selectDualBenchmark(cached.result.reels)
-          : selectDualBenchmarkFromItems(cached.result.items, platform);
-      }
-
-      const result: AnalyzeResult = {
-        platform,
-        username,
-        analyzedAt: cached.fetchedAt,
-        source: cached.result.source,
-        cacheHit: true,
-        organic: benchmark.organic,
-        commercial: benchmark.commercial,
-        comparison: benchmark.comparison,
-        excludedNonReelCount: benchmark.excludedNonReelCount,
-        excludedTestReelCount: benchmark.excludedTestReelCount,
-        totalReelCount: benchmark.totalReelCount,
-        limitations: [`Cached result (${cached.freshness}, ${Math.round(cached.ageMs / 60000)}m ago)`],
-      };
-      return NextResponse.json(result);
-    }
-  }
-
-  // Fetch from provider
   try {
-    const provider = getProvider(platform);
-    const providerResult = await provider.fetchRecentMedia(username);
+    // Cache check -> provider fetch -> cache store
+    const { providerResult, cacheHit, cacheInfo } =
+      await resolveProviderData(platform, username, forceRefresh);
 
-    // Use platform-appropriate selection pipeline
-    let benchmark;
-    if (platform === "tiktok") {
-      benchmark = selectDualBenchmarkFromItems(
-        providerResult.items,
-        platform
-      );
-    } else {
-      // Instagram backward-compatible path using reels
-      benchmark = providerResult.reels
-        ? selectDualBenchmark(providerResult.reels)
-        : selectDualBenchmarkFromItems(providerResult.items, platform);
-    }
+    // Run benchmark pipeline
+    const benchmark = runBenchmarkPipeline(providerResult, platform);
 
     // Both buckets empty = no content
     const contentLabel = platform === "tiktok" ? "videos" : "Reels";
@@ -168,33 +107,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Build limitations list based on provider source
-    const limitations: string[] = [];
-    if (platform === "instagram") {
-      if (providerResult.source === "mock") {
-        limitations.push(
-          "This result uses simulated mock data. Set APIFY_API_TOKEN for live Instagram data."
-        );
-      } else if (providerResult.source === "instagram-apify") {
-        limitations.push(
-          "Live data via Apify. View counts are real video views. Caption availability may vary by account — incomplete captions can affect benchmark validity."
-        );
-      }
-      // Meta source: no limitations needed (official API)
-    } else if (platform === "tiktok") {
-      if (providerResult.source === "tiktok-mock") {
-        limitations.push(
-          "This result uses simulated mock data. Set APIFY_API_TOKEN for live TikTok data."
-        );
-      } else if (providerResult.source === "tiktok-apify") {
-        limitations.push(
-          "Live data via Apify managed scraping. Engagement metrics are real but may have minor delays."
-        );
-      } else if (providerResult.source === "tiktok-research") {
-        limitations.push(
-          "TikTok Research API data may have delayed engagement metrics (not guaranteed real-time)."
-        );
-      }
+    // Build limitations list
+    const limitations = getLimitations(platform, providerResult.source);
+    if (cacheHit) {
+      limitations.push(cacheInfo);
     }
 
     const result: AnalyzeResult = {
@@ -202,7 +118,7 @@ export async function POST(request: NextRequest) {
       username,
       analyzedAt: new Date().toISOString(),
       source: providerResult.source,
-      cacheHit: false,
+      cacheHit,
       organic: benchmark.organic,
       commercial: benchmark.commercial,
       comparison: benchmark.comparison,
@@ -212,14 +128,8 @@ export async function POST(request: NextRequest) {
       limitations,
     };
 
-    // Cache the raw provider result durably
-    await cacheProviderResult(platform, username, providerResult);
-
-    // M2: Persist items to warehouse
-    await ingestContentItems(providerResult.items, platform, username);
-
-    // M3: Update scan profile
-    await updateScanProfile(platform, username, providerResult);
+    // Persist to warehouse + update scan profile (fire after response build)
+    await persistAndUpdateProfile(providerResult, platform, username);
 
     return NextResponse.json(result);
   } catch (err) {
