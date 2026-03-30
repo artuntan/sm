@@ -730,20 +730,28 @@ function CampaignDetailPanel({
 
   // Creator picker state
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerMode, setPickerMode] = useState<"single" | "bulk">("single");
   const [pickerQuery, setPickerQuery] = useState("");
   const [pickerResults, setPickerResults] = useState<Array<{
     instagramHandle: string | null;
     tiktokHandle: string | null;
     label: string;
+    profilePicUrl: string | null;
   }>>([]);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [addingCreator, setAddingCreator] = useState<string | null>(null);
   const [removingCreator, setRemovingCreator] = useState<string | null>(null);
+  const [bulkInput, setBulkInput] = useState("");
+  const [bulkAdding, setBulkAdding] = useState(false);
+  // Local optimistic creators list to avoid full refetch jitter
+  const [localCreators, setLocalCreators] = useState(creators);
+  useEffect(() => { setLocalCreators(creators); }, [creators]);
 
   type WarehouseIdentity = {
     displayName?: string | null;
     instagramUsername?: string | null;
     tiktokUsername?: string | null;
+    platforms?: Array<{ profilePicUrl?: string | null }>;
   };
 
   // Fetch warehouse creators for picker
@@ -759,12 +767,7 @@ function CampaignDetailPanel({
         .filter((identity) => {
           const instagramHandle = identity.instagramUsername || "";
           const tiktokHandle = identity.tiktokUsername || "";
-          const label =
-            identity.displayName ||
-            identity.instagramUsername ||
-            identity.tiktokUsername ||
-            "";
-
+          const label = identity.displayName || identity.instagramUsername || identity.tiktokUsername || "";
           if (!query) return true;
           return (
             instagramHandle.toLowerCase().includes(query) ||
@@ -772,16 +775,16 @@ function CampaignDetailPanel({
             label.toLowerCase().includes(query)
           );
         })
-        .slice(0, 8)
-        .map((identity) => ({
-          instagramHandle: identity.instagramUsername || null,
-          tiktokHandle: identity.tiktokUsername || null,
-          label:
-            identity.displayName ||
-            identity.instagramUsername ||
-            identity.tiktokUsername ||
-            "—",
-        }));
+        .slice(0, 10)
+        .map((identity) => {
+          const pic = identity.platforms?.find(p => p.profilePicUrl)?.profilePicUrl || null;
+          return {
+            instagramHandle: identity.instagramUsername || null,
+            tiktokHandle: identity.tiktokUsername || null,
+            label: identity.displayName || identity.instagramUsername || identity.tiktokUsername || "—",
+            profilePicUrl: pic,
+          };
+        });
       setPickerResults(results);
     } catch {
       setPickerResults([]);
@@ -795,8 +798,27 @@ function CampaignDetailPanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPicker]);
 
-  const handleAddCreator = async (creator: { instagramHandle: string | null; tiktokHandle: string | null; label: string }) => {
+  // Build a profilePicUrl lookup from picker results for added creators
+  const picUrlMap = new Map<string, string>();
+  for (const pr of pickerResults) {
+    if (pr.profilePicUrl) {
+      if (pr.instagramHandle) picUrlMap.set(pr.instagramHandle, pr.profilePicUrl);
+      if (pr.tiktokHandle) picUrlMap.set(pr.tiktokHandle, pr.profilePicUrl);
+    }
+  }
+
+  const handleAddCreator = async (creator: { instagramHandle: string | null; tiktokHandle: string | null; label: string; profilePicUrl?: string | null }) => {
     setAddingCreator(creator.label);
+    // Optimistic local update — add immediately
+    const tempId = `temp_${Date.now()}`;
+    setLocalCreators(prev => [...prev, {
+      id: tempId,
+      campaignId: campaign.id,
+      instagramHandle: creator.instagramHandle,
+      tiktokHandle: creator.tiktokHandle,
+      label: creator.label,
+      addedAt: new Date().toISOString(),
+    } as CampaignCreator]);
     try {
       const res = await fetch(`/api/campaigns/${campaign.id}/creators`, {
         method: "POST",
@@ -810,17 +832,56 @@ function CampaignDetailPanel({
         }),
       });
       if (res.ok) {
-        // Refresh the campaign detail by triggering a reload
+        // Silently refresh in background — no visible jitter
         window.dispatchEvent(new CustomEvent("campaign-refresh", { detail: campaign.id }));
-        setShowPicker(false);
-        setPickerQuery("");
       }
     } catch { /* silent */ }
     setAddingCreator(null);
   };
 
+  const handleBulkAdd = async () => {
+    const lines = bulkInput.split("\n").map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return;
+    setBulkAdding(true);
+    const creatorsToAdd: Array<{ instagramHandle: string | null; tiktokHandle: string | null; label: string }> = [];
+    for (const line of lines) {
+      const parts = line.split(/[,\t]+/).map(p => p.trim().replace(/^@/, "").toLowerCase()).filter(Boolean);
+      if (parts.length >= 2) {
+        creatorsToAdd.push({ instagramHandle: parts[0], tiktokHandle: parts[1], label: parts[0] });
+      } else if (parts.length === 1) {
+        creatorsToAdd.push({ instagramHandle: parts[0], tiktokHandle: null, label: parts[0] });
+      }
+    }
+    if (creatorsToAdd.length === 0) { setBulkAdding(false); return; }
+    // Optimistic local update
+    setLocalCreators(prev => [
+      ...prev,
+      ...creatorsToAdd.map((c, i) => ({
+        id: `temp_bulk_${Date.now()}_${i}`,
+        campaignId: campaign.id,
+        instagramHandle: c.instagramHandle,
+        tiktokHandle: c.tiktokHandle,
+        label: c.label,
+        addedAt: new Date().toISOString(),
+      } as CampaignCreator)),
+    ]);
+    try {
+      await fetch(`/api/campaigns/${campaign.id}/creators`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creators: creatorsToAdd }),
+      });
+      window.dispatchEvent(new CustomEvent("campaign-refresh", { detail: campaign.id }));
+      setBulkInput("");
+      setShowPicker(false);
+    } catch { /* silent */ }
+    setBulkAdding(false);
+  };
+
   const handleRemoveCreator = async (creatorId: string) => {
     setRemovingCreator(creatorId);
+    // Optimistic local removal
+    setLocalCreators(prev => prev.filter(c => c.id !== creatorId));
     try {
       const res = await fetch(`/api/campaigns/${campaign.id}/creators`, {
         method: "DELETE",
@@ -854,9 +915,11 @@ function CampaignDetailPanel({
         style={{ pointerEvents: "none" }}
       >
         <div
-          className="w-full max-w-[520px] rounded-lg border overflow-y-auto"
+          className="w-full max-w-[520px] rounded-lg border"
           style={{
             backgroundColor: "var(--bg-primary)",
+            overflowY: "auto",
+            scrollbarWidth: "none",
             borderColor: "var(--border-subtle)",
             maxHeight: "90vh",
             pointerEvents: "auto",
@@ -990,25 +1053,31 @@ function CampaignDetailPanel({
                   fontFamily: "var(--font-mono)",
                 }}
               >
-                CREATORS · {creators.length}
+                CREATORS · {localCreators.length}
               </span>
               <button
-                onClick={() => { setShowPicker(!showPicker); setPickerQuery(""); }}
+                onClick={() => { setShowPicker(!showPicker); setPickerQuery(""); setPickerMode("single"); }}
                 className="text-[10px] px-1.5 py-0.5 rounded hover:opacity-80 transition-all"
                 style={{
-                  backgroundColor: "var(--accent-green-glow)",
-                  color: "var(--accent-green)",
+                  backgroundColor: showPicker ? "rgba(128,128,128,0.08)" : "var(--accent-green-glow)",
+                  color: showPicker ? "var(--text-muted)" : "var(--accent-green)",
                   fontFamily: "var(--font-mono)",
-                  border: "1px solid var(--accent-green)33",
+                  border: showPicker ? "1px solid var(--border-default)" : "1px solid var(--accent-green)33",
                   cursor: "pointer",
                 }}
               >
-                + ADD
+                {showPicker ? "CLOSE" : "+ ADD"}
               </button>
             </div>
 
             {/* Creator Picker */}
-            {showPicker && (
+            <div
+              style={{
+                maxHeight: showPicker ? "400px" : "0px",
+                overflow: "hidden",
+                transition: "max-height 0.2s ease",
+              }}
+            >
               <div
                 className="rounded-md border mb-2 overflow-hidden"
                 style={{
@@ -1016,91 +1085,189 @@ function CampaignDetailPanel({
                   borderColor: "var(--border-default)",
                 }}
               >
-                <div className="p-2">
-                  <input
-                    type="text"
-                    value={pickerQuery}
-                    onChange={(e) => {
-                      setPickerQuery(e.target.value);
-                      searchCreators(e.target.value);
-                    }}
-                    placeholder="Search creators..."
-                    className="w-full rounded-md border px-2.5 py-1.5 text-xs bg-transparent"
+                {/* Mode tabs */}
+                <div className="flex border-b" style={{ borderColor: "var(--border-subtle)" }}>
+                  <button
+                    onClick={() => setPickerMode("single")}
+                    className="flex-1 py-1.5 text-[10px] font-medium tracking-wider transition-colors"
                     style={{
-                      borderColor: "var(--border-default)",
-                      color: "var(--text-primary)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: pickerMode === "single" ? "var(--accent-green)" : "var(--text-muted)",
+                      fontFamily: "var(--font-mono)",
+                      borderBottom: pickerMode === "single" ? "1px solid var(--accent-green)" : "1px solid transparent",
                     }}
-                    autoFocus
-                  />
+                  >
+                    SEARCH
+                  </button>
+                  <button
+                    onClick={() => setPickerMode("bulk")}
+                    className="flex-1 py-1.5 text-[10px] font-medium tracking-wider transition-colors"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: pickerMode === "bulk" ? "var(--accent-green)" : "var(--text-muted)",
+                      fontFamily: "var(--font-mono)",
+                      borderBottom: pickerMode === "bulk" ? "1px solid var(--accent-green)" : "1px solid transparent",
+                    }}
+                  >
+                    BULK ADD
+                  </button>
                 </div>
-                <div style={{ maxHeight: "200px", overflowY: "auto" }}>
-                  {pickerLoading ? (
-                    <div className="px-3 py-3 text-center text-[10px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                      Loading…
+
+                {pickerMode === "single" ? (
+                  <>
+                    <div className="p-2">
+                      <input
+                        type="text"
+                        value={pickerQuery}
+                        onChange={(e) => {
+                          setPickerQuery(e.target.value);
+                          searchCreators(e.target.value);
+                        }}
+                        placeholder="Search creators..."
+                        className="w-full rounded-md border px-2.5 py-1.5 text-xs bg-transparent"
+                        style={{
+                          borderColor: "var(--border-default)",
+                          color: "var(--text-primary)",
+                          outline: "none",
+                        }}
+                        autoFocus
+                      />
                     </div>
-                  ) : pickerResults.length === 0 ? (
-                    <div className="px-3 py-3 text-center text-[10px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                      No creators found
-                    </div>
-                  ) : (
-                    pickerResults.map((cr, i) => {
-                      const alreadyAdded = creators.some(
-                        (ec) =>
-                          (ec.instagramHandle && ec.instagramHandle === cr.instagramHandle) ||
-                          (ec.tiktokHandle && ec.tiktokHandle === cr.tiktokHandle)
-                      );
-                      return (
-                        <div
-                          key={`${cr.instagramHandle}-${cr.tiktokHandle}-${i}`}
-                          className="flex items-center justify-between px-3 py-2 transition-colors"
-                          style={{
-                            borderTop: "1px solid var(--border-subtle)",
-                            cursor: alreadyAdded ? "default" : "pointer",
-                            opacity: alreadyAdded ? 0.4 : 1,
-                          }}
-                          onClick={() => !alreadyAdded && handleAddCreator(cr)}
-                          onMouseEnter={(e) => { if (!alreadyAdded) (e.currentTarget.style.backgroundColor = "var(--bg-elevated)"); }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
-                        >
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>
-                              {cr.label}
-                            </p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              {cr.instagramHandle && (
-                                <span className="text-[9px]" style={{ color: "#E1306C", fontFamily: "var(--font-mono)" }}>
-                                  @{cr.instagramHandle}
-                                </span>
+                    <div style={{ maxHeight: "200px", overflowY: "auto", scrollbarWidth: "none" }}>
+                      {pickerLoading ? (
+                        <div className="px-3 py-3 text-center text-[10px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                          Loading…
+                        </div>
+                      ) : pickerResults.length === 0 ? (
+                        <div className="px-3 py-3 text-center text-[10px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                          No creators found
+                        </div>
+                      ) : (
+                        pickerResults.map((cr, i) => {
+                          const alreadyAdded = localCreators.some(
+                            (ec) =>
+                              (ec.instagramHandle && ec.instagramHandle === cr.instagramHandle) ||
+                              (ec.tiktokHandle && ec.tiktokHandle === cr.tiktokHandle)
+                          );
+                          return (
+                            <div
+                              key={`${cr.instagramHandle}-${cr.tiktokHandle}-${i}`}
+                              className="flex items-center gap-2.5 px-3 py-2 transition-colors"
+                              style={{
+                                borderTop: "1px solid var(--border-subtle)",
+                                cursor: alreadyAdded ? "default" : "pointer",
+                                opacity: alreadyAdded ? 0.4 : 1,
+                              }}
+                              onClick={() => !alreadyAdded && handleAddCreator(cr)}
+                              onMouseEnter={(e) => { if (!alreadyAdded) (e.currentTarget.style.backgroundColor = "var(--bg-elevated)"); }}
+                              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                            >
+                              {/* Avatar */}
+                              {cr.profilePicUrl ? (
+                                <img
+                                  src={cr.profilePicUrl}
+                                  alt=""
+                                  className="shrink-0 rounded-full"
+                                  style={{ width: 28, height: 28, objectFit: "cover" }}
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                />
+                              ) : (
+                                <div
+                                  className="shrink-0 rounded-full flex items-center justify-center text-[10px] font-medium"
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    backgroundColor: "var(--bg-elevated)",
+                                    color: "var(--text-muted)",
+                                  }}
+                                >
+                                  {(cr.label || "?")[0].toUpperCase()}
+                                </div>
                               )}
-                              {cr.tiktokHandle && (
-                                <span className="text-[9px]" style={{ color: "#00f2ea", fontFamily: "var(--font-mono)" }}>
-                                  @{cr.tiktokHandle}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                                  {cr.label}
+                                </p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  {cr.instagramHandle && (
+                                    <span className="text-[9px]" style={{ color: "#E1306C", fontFamily: "var(--font-mono)" }}>
+                                      @{cr.instagramHandle}
+                                    </span>
+                                  )}
+                                  {cr.tiktokHandle && (
+                                    <span className="text-[9px]" style={{ color: "#00f2ea", fontFamily: "var(--font-mono)" }}>
+                                      @{cr.tiktokHandle}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {alreadyAdded ? (
+                                <span className="text-[9px] shrink-0" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                                  ADDED
+                                </span>
+                              ) : addingCreator === cr.label ? (
+                                <span className="text-[9px] shrink-0" style={{ color: "var(--accent-green)", fontFamily: "var(--font-mono)" }}>
+                                  ADDING…
+                                </span>
+                              ) : (
+                                <span className="text-[9px] shrink-0" style={{ color: "var(--accent-green)", fontFamily: "var(--font-mono)" }}>
+                                  + ADD
                                 </span>
                               )}
                             </div>
-                          </div>
-                          {alreadyAdded ? (
-                            <span className="text-[9px] shrink-0" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                              ADDED
-                            </span>
-                          ) : addingCreator === cr.label ? (
-                            <span className="text-[9px] shrink-0" style={{ color: "var(--accent-green)", fontFamily: "var(--font-mono)" }}>
-                              ADDING…
-                            </span>
-                          ) : (
-                            <span className="text-[9px] shrink-0" style={{ color: "var(--accent-green)", fontFamily: "var(--font-mono)" }}>
-                              + ADD
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  /* Bulk Add Mode */
+                  <div className="p-2.5 space-y-2">
+                    <textarea
+                      value={bulkInput}
+                      onChange={(e) => setBulkInput(e.target.value)}
+                      placeholder={"instagram_handle, tiktok_handle\ninstagram_handle2, tiktok_handle2\n\nOne creator per line.\nSame format as Analyze."}
+                      className="w-full rounded-md border px-2.5 py-2 text-xs bg-transparent"
+                      style={{
+                        borderColor: "var(--border-default)",
+                        color: "var(--text-primary)",
+                        fontFamily: "var(--font-mono)",
+                        minHeight: "100px",
+                        resize: "vertical",
+                        outline: "none",
+                      }}
+                      autoFocus
+                    />
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                        {bulkInput.split("\n").filter(l => l.trim()).length} creator{bulkInput.split("\n").filter(l => l.trim()).length !== 1 ? "s" : ""}
+                      </span>
+                      <button
+                        onClick={handleBulkAdd}
+                        disabled={bulkAdding || !bulkInput.trim()}
+                        className="text-[10px] px-2.5 py-1 rounded font-medium tracking-wider transition-all hover:opacity-80"
+                        style={{
+                          backgroundColor: "var(--accent-green-glow)",
+                          color: "var(--accent-green)",
+                          fontFamily: "var(--font-mono)",
+                          border: "1px solid var(--accent-green)33",
+                          cursor: bulkAdding || !bulkInput.trim() ? "default" : "pointer",
+                          opacity: bulkAdding || !bulkInput.trim() ? 0.4 : 1,
+                        }}
+                      >
+                        {bulkAdding ? "ADDING…" : "ADD ALL"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
 
-            {creators.length === 0 ? (
+            {localCreators.length === 0 ? (
               <div
                 className="rounded-md border p-4 text-center"
                 style={{
@@ -1132,71 +1299,96 @@ function CampaignDetailPanel({
                   borderColor: "var(--border-subtle)",
                 }}
               >
-                {creators.map(
-                  (creator: CampaignCreator, i: number) => (
-                    <div
-                      key={creator.id}
-                      className="flex items-center gap-3 px-3 py-2.5 group"
-                      style={{
-                        borderBottom:
-                          i < creators.length - 1
-                            ? "1px solid var(--border-subtle)"
-                            : "none",
-                      }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className="text-xs font-medium truncate"
-                          style={{
-                            color: "var(--text-primary)",
-                          }}
-                        >
-                          {creator.label ||
-                            creator.instagramHandle ||
-                            creator.tiktokHandle ||
-                            "—"}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {creator.instagramHandle && (
-                            <span
-                              className="text-[9px]"
-                              style={{
-                                color: "#E1306C",
-                                fontFamily: "var(--font-mono)",
-                              }}
-                            >
-                              @{creator.instagramHandle}
-                            </span>
-                          )}
-                          {creator.tiktokHandle && (
-                            <span
-                              className="text-[9px]"
-                              style={{
-                                color: "#00f2ea",
-                                fontFamily: "var(--font-mono)",
-                              }}
-                            >
-                              @{creator.tiktokHandle}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleRemoveCreator(creator.id); }}
-                        className="text-[10px] opacity-30 hover:opacity-100 transition-opacity shrink-0"
+                {localCreators.map(
+                  (creator: CampaignCreator, i: number) => {
+                    const picUrl = picUrlMap.get(creator.instagramHandle || "") || picUrlMap.get(creator.tiktokHandle || "") || null;
+                    return (
+                      <div
+                        key={creator.id}
+                        className="flex items-center gap-2.5 px-3 py-2.5 group"
                         style={{
-                          background: "none",
-                          border: "none",
-                          color: "var(--accent-pink)",
-                          cursor: "pointer",
-                          padding: "2px 4px",
+                          borderBottom:
+                            i < localCreators.length - 1
+                              ? "1px solid var(--border-subtle)"
+                              : "none",
                         }}
-                        title="Remove creator"
                       >
-                        {removingCreator === creator.id ? "…" : "✕"}
-                      </button>
-                    </div>
-                  )
+                        {/* Avatar */}
+                        {picUrl ? (
+                          <img
+                            src={picUrl}
+                            alt=""
+                            className="shrink-0 rounded-full"
+                            style={{ width: 28, height: 28, objectFit: "cover" }}
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <div
+                            className="shrink-0 rounded-full flex items-center justify-center text-[10px] font-medium"
+                            style={{
+                              width: 28,
+                              height: 28,
+                              backgroundColor: "var(--bg-elevated)",
+                              color: "var(--text-muted)",
+                            }}
+                          >
+                            {((creator.label || creator.instagramHandle || creator.tiktokHandle || "?")[0] || "?").toUpperCase()}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className="text-xs font-medium truncate"
+                            style={{
+                              color: "var(--text-primary)",
+                            }}
+                          >
+                            {creator.label ||
+                              creator.instagramHandle ||
+                              creator.tiktokHandle ||
+                              "—"}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {creator.instagramHandle && (
+                              <span
+                                className="text-[9px]"
+                                style={{
+                                  color: "#E1306C",
+                                  fontFamily: "var(--font-mono)",
+                                }}
+                              >
+                                @{creator.instagramHandle}
+                              </span>
+                            )}
+                            {creator.tiktokHandle && (
+                              <span
+                                className="text-[9px]"
+                                style={{
+                                  color: "#00f2ea",
+                                  fontFamily: "var(--font-mono)",
+                                }}
+                              >
+                                @{creator.tiktokHandle}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRemoveCreator(creator.id); }}
+                          className="text-[10px] opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0"
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "var(--accent-pink)",
+                            cursor: "pointer",
+                            padding: "2px 4px",
+                          }}
+                          title="Remove creator"
+                        >
+                          {removingCreator === creator.id ? "…" : "✕"}
+                        </button>
+                      </div>
+                    );
+                  }
                 )}
               </div>
             )}
