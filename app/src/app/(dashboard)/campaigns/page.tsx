@@ -22,25 +22,31 @@ import type {
   CampaignCreator,
   CampaignDeliverable,
 } from "@/lib/domain/campaign-types";
-import {
-  CAMPAIGN_STATUS_LABELS,
-  CAMPAIGN_STATUS_ORDER,
-} from "@/lib/domain/campaign-types";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type ViewMode = "all" | CampaignStatus;
+type ViewMode = "all" | "draft" | "active";
 
 // ---------------------------------------------------------------------------
-// Status styling
+// Simplified user-facing status model
+// Internal: draft | active | monitoring | completed | archived
+// User sees: Draft or Active (monitoring/completed map to Active)
 // ---------------------------------------------------------------------------
 
-const STATUS_STYLES: Record<
-  CampaignStatus,
-  { color: string; bg: string; dot: string }
-> = {
+type UserStatus = "draft" | "active";
+
+function toUserStatus(internal: string): UserStatus {
+  if (internal === "draft") return "draft";
+  return "active"; // active, monitoring, completed all show as "Active"
+}
+
+function isVisibleCampaign(status: string): boolean {
+  return status !== "archived";
+}
+
+const USER_STATUS_STYLE: Record<UserStatus, { color: string; bg: string; dot: string }> = {
   draft: {
     color: "var(--text-muted)",
     bg: "rgba(128,128,128,0.08)",
@@ -51,21 +57,11 @@ const STATUS_STYLES: Record<
     bg: "var(--accent-green-glow)",
     dot: "var(--accent-green)",
   },
-  monitoring: {
-    color: "var(--accent-blue)",
-    bg: "rgba(56,189,248,0.08)",
-    dot: "var(--accent-blue)",
-  },
-  completed: {
-    color: "#d97706",
-    bg: "rgba(217,119,6,0.08)",
-    dot: "#d97706",
-  },
-  archived: {
-    color: "var(--text-muted)",
-    bg: "rgba(128,128,128,0.05)",
-    dot: "var(--border-subtle)",
-  },
+};
+
+const USER_STATUS_LABEL: Record<UserStatus, string> = {
+  draft: "DRAFT",
+  active: "ACTIVE",
 };
 
 // ---------------------------------------------------------------------------
@@ -101,11 +97,7 @@ export default function CampaignsPage() {
     try {
       if (!_campaignsCache) setLoading(true);
       setError(null);
-      const url =
-        viewMode === "all"
-          ? "/api/campaigns"
-          : `/api/campaigns?status=${viewMode}`;
-      const res = await fetch(url);
+      const res = await fetch("/api/campaigns");
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to load campaigns");
@@ -119,10 +111,24 @@ export default function CampaignsPage() {
     } finally {
       setLoading(false);
     }
-  }, [viewMode]);
+  }, []);
 
   useEffect(() => {
     loadCampaigns();
+  }, [loadCampaigns]);
+
+  // Listen for campaign-refresh events from detail panel
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent).detail;
+      if (id) {
+        // Reload the detail for this campaign
+        loadDetail(id);
+        loadCampaigns();
+      }
+    };
+    window.addEventListener("campaign-refresh", handler);
+    return () => window.removeEventListener("campaign-refresh", handler);
   }, [loadCampaigns]);
 
   // ── Create campaign ───────────────────────────────────────────────────────
@@ -199,14 +205,12 @@ export default function CampaignsPage() {
 
   // ── Computed ──────────────────────────────────────────────────────────────
 
-  const statusCounts = campaigns.reduce(
-    (acc, c) => {
-      acc[c.status as CampaignStatus] =
-        (acc[c.status as CampaignStatus] || 0) + 1;
-      return acc;
-    },
-    {} as Record<CampaignStatus, number>
-  );
+  const visibleCampaigns = campaigns.filter(c => isVisibleCampaign(c.status));
+
+  const filteredCampaigns = visibleCampaigns.filter(c => {
+    if (viewMode === "all") return true;
+    return toUserStatus(c.status) === viewMode;
+  });
 
   // ── Brand labels ──────────────────────────────────────────────────────────
 
@@ -273,58 +277,35 @@ export default function CampaignsPage() {
         className="flex items-center gap-1 mb-4 pb-3"
         style={{ borderBottom: "1px solid var(--border-subtle)" }}
       >
-        <button
-          onClick={() => setViewMode("all")}
-          className="px-2 py-1 rounded text-[10px] font-medium tracking-wider transition-all"
-          style={{
-            backgroundColor:
-              viewMode === "all"
-                ? "var(--bg-elevated)"
-                : "transparent",
-            color:
-              viewMode === "all"
-                ? "var(--text-primary)"
-                : "var(--text-muted)",
-            fontFamily: "var(--font-mono)",
-            border:
-              viewMode === "all"
-                ? "1px solid var(--border-default)"
-                : "1px solid transparent",
-            cursor: "pointer",
-          }}
-        >
-          ALL ({campaigns.length})
-        </button>
-        {CAMPAIGN_STATUS_ORDER.filter((s) => s !== "archived").map(
-          (status) => {
-            const count = statusCounts[status] || 0;
-            const style = STATUS_STYLES[status];
-            const isActive = viewMode === status;
-            return (
-              <button
-                key={status}
-                onClick={() => setViewMode(status)}
-                className="px-2 py-1 rounded text-[10px] font-medium tracking-wider transition-all"
-                style={{
-                  backgroundColor: isActive
-                    ? style.bg
-                    : "transparent",
-                  color: isActive
-                    ? style.color
-                    : "var(--text-muted)",
-                  fontFamily: "var(--font-mono)",
-                  border: isActive
-                    ? `1px solid ${style.color}33`
-                    : "1px solid transparent",
-                  cursor: "pointer",
-                }}
-              >
-                {CAMPAIGN_STATUS_LABELS[status].toUpperCase()} (
-                {count})
-              </button>
-            );
-          }
-        )}
+        {(["all", "draft", "active"] as const).map((mode) => {
+          const isActive = viewMode === mode;
+          const count = mode === "all"
+            ? visibleCampaigns.length
+            : visibleCampaigns.filter(c => toUserStatus(c.status) === mode).length;
+          const modeStyle = mode === "all" ? null : USER_STATUS_STYLE[mode];
+          return (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className="px-2 py-1 rounded text-[10px] font-medium tracking-wider transition-all"
+              style={{
+                backgroundColor: isActive
+                  ? (modeStyle?.bg || "var(--bg-elevated)")
+                  : "transparent",
+                color: isActive
+                  ? (modeStyle?.color || "var(--text-primary)")
+                  : "var(--text-muted)",
+                fontFamily: "var(--font-mono)",
+                border: isActive
+                  ? `1px solid ${modeStyle?.color || "var(--border-default)"}33`
+                  : "1px solid transparent",
+                cursor: "pointer",
+              }}
+            >
+              {mode === "all" ? "ALL" : USER_STATUS_LABEL[mode]} ({count})
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Error Banner ── */}
@@ -427,12 +408,11 @@ export default function CampaignsPage() {
       )}
 
       {/* ── Campaign List ── */}
-      {!loading && campaigns.length > 0 && (
+      {!loading && filteredCampaigns.length > 0 && (
         <div className="space-y-2">
-          {campaigns.map((camp) => {
-            const style =
-              STATUS_STYLES[camp.status as CampaignStatus] ||
-              STATUS_STYLES.draft;
+          {filteredCampaigns.map((camp) => {
+            const us = toUserStatus(camp.status);
+            const style = USER_STATUS_STYLE[us];
             const isSelected = selectedCampaign?.id === camp.id;
 
             return (
@@ -471,9 +451,7 @@ export default function CampaignsPage() {
                       fontFamily: "var(--font-mono)",
                     }}
                   >
-                    {CAMPAIGN_STATUS_LABELS[
-                      camp.status as CampaignStatus
-                    ]?.toUpperCase() || camp.status.toUpperCase()}
+                    {USER_STATUS_LABEL[us]}
                   </span>
                 </div>
 
@@ -744,25 +722,105 @@ function CampaignDetailPanel({
   brandLabel: (id: string | null) => string;
   onClose: () => void;
 }) {
-  const style =
-    STATUS_STYLES[campaign.status as CampaignStatus] || STATUS_STYLES.draft;
+  const us = toUserStatus(campaign.status);
+  const style = USER_STATUS_STYLE[us];
   const creators = campaign.creators || [];
   const deliverables = campaign.deliverables || [];
   const matchKeywords: string[] = campaign.matchKeywords || [];
-
-  // Compute next valid transitions
   const currentStatus = campaign.status as CampaignStatus;
-  const nextStatuses: CampaignStatus[] = [];
-  const transitions: Record<CampaignStatus, CampaignStatus[]> = {
-    draft: ["active", "archived"],
-    active: ["monitoring", "completed", "archived"],
-    monitoring: ["completed", "archived"],
-    completed: ["archived"],
-    archived: ["draft"],
+
+  // Creator picker state
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState("");
+  const [pickerResults, setPickerResults] = useState<Array<{
+    instagramHandle: string | null;
+    tiktokHandle: string | null;
+    label: string;
+  }>>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [addingCreator, setAddingCreator] = useState<string | null>(null);
+  const [removingCreator, setRemovingCreator] = useState<string | null>(null);
+
+  // Fetch warehouse creators for picker
+  const searchCreators = useCallback(async (q: string) => {
+    setPickerLoading(true);
+    try {
+      const res = await fetch("/api/warehouse");
+      if (!res.ok) return;
+      const data = await res.json();
+      const identities = data.identities || [];
+      const query = q.toLowerCase().trim();
+      const results = identities
+        .filter((id: { instagramHandle?: string; tiktokHandle?: string; label?: string }) => {
+          if (!query) return true;
+          return (
+            (id.instagramHandle || "").toLowerCase().includes(query) ||
+            (id.tiktokHandle || "").toLowerCase().includes(query) ||
+            (id.label || "").toLowerCase().includes(query)
+          );
+        })
+        .slice(0, 8)
+        .map((id: { instagramHandle?: string; tiktokHandle?: string; label?: string }) => ({
+          instagramHandle: id.instagramHandle || null,
+          tiktokHandle: id.tiktokHandle || null,
+          label: id.label || id.instagramHandle || id.tiktokHandle || "—",
+        }));
+      setPickerResults(results);
+    } catch {
+      setPickerResults([]);
+    }
+    setPickerLoading(false);
+  }, []);
+
+  // Load creators when picker opens
+  useEffect(() => {
+    if (showPicker) searchCreators(pickerQuery);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPicker]);
+
+  const handleAddCreator = async (creator: { instagramHandle: string | null; tiktokHandle: string | null; label: string }) => {
+    setAddingCreator(creator.label);
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/creators`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          creators: [{
+            instagramHandle: creator.instagramHandle,
+            tiktokHandle: creator.tiktokHandle,
+            label: creator.label,
+          }],
+        }),
+      });
+      if (res.ok) {
+        // Refresh the campaign detail by triggering a reload
+        window.dispatchEvent(new CustomEvent("campaign-refresh", { detail: campaign.id }));
+        setShowPicker(false);
+        setPickerQuery("");
+      }
+    } catch { /* silent */ }
+    setAddingCreator(null);
   };
-  if (transitions[currentStatus]) {
-    nextStatuses.push(...transitions[currentStatus]);
-  }
+
+  const handleRemoveCreator = async (creatorId: string) => {
+    setRemovingCreator(creatorId);
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/creators`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creatorId }),
+      });
+      if (res.ok) {
+        window.dispatchEvent(new CustomEvent("campaign-refresh", { detail: campaign.id }));
+      }
+    } catch { /* silent */ }
+    setRemovingCreator(null);
+  };
+
+  // Determine single action for this campaign
+  const actionLabel = us === "draft" ? "ACTIVATE" : "ARCHIVE";
+  const actionTarget: CampaignStatus = us === "draft" ? "active" : "archived";
+  const actionColor = us === "draft" ? "var(--accent-green)" : "var(--text-muted)";
 
   return (
     <>
@@ -802,13 +860,10 @@ function CampaignDetailPanel({
                 style={{ backgroundColor: style.dot }}
               />
               <span
-                className="text-xs font-medium tracking-wider"
-                style={{
-                  color: "var(--text-muted)",
-                  fontFamily: "var(--font-mono)",
-                }}
+                className="text-xs font-medium"
+                style={{ color: "var(--text-primary)" }}
               >
-                CAMPAIGN DETAIL
+                {campaign.name}
               </span>
             </div>
             <button
@@ -837,14 +892,8 @@ function CampaignDetailPanel({
         </div>
       ) : (
         <div className="p-4 space-y-4">
-          {/* Campaign info */}
-          <div>
-            <h2
-              className="text-base font-semibold mb-1"
-              style={{ color: "var(--text-primary)" }}
-            >
-              {campaign.name}
-            </h2>
+          {/* Status + Brand + Action row */}
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span
                 className="text-[10px] font-medium tracking-wider px-1.5 py-0.5 rounded"
@@ -854,9 +903,7 @@ function CampaignDetailPanel({
                   fontFamily: "var(--font-mono)",
                 }}
               >
-                {CAMPAIGN_STATUS_LABELS[
-                  currentStatus
-                ]?.toUpperCase()}
+                {USER_STATUS_LABEL[us]}
               </span>
               {campaign.brandId && (
                 <span
@@ -870,203 +917,53 @@ function CampaignDetailPanel({
                 </span>
               )}
             </div>
-          </div>
-
-          {/* Status transitions */}
-          {nextStatuses.length > 0 && (
-            <div
-              className="rounded-md border p-3"
+            <button
+              onClick={() => onUpdateStatus(campaign.id, actionTarget)}
+              className="px-2.5 py-1 rounded text-[10px] font-medium tracking-wider transition-all hover:opacity-80"
               style={{
-                backgroundColor: "var(--bg-secondary)",
-                borderColor: "var(--border-subtle)",
+                backgroundColor: us === "draft" ? "var(--accent-green-glow)" : "rgba(128,128,128,0.08)",
+                color: actionColor,
+                fontFamily: "var(--font-mono)",
+                border: `1px solid ${actionColor}33`,
+                cursor: "pointer",
               }}
             >
-              <p
-                className="text-[10px] tracking-wider mb-2"
-                style={{
-                  color: "var(--text-muted)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                TRANSITION TO
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {nextStatuses.map((ns) => {
-                  const nsStyle = STATUS_STYLES[ns];
-                  return (
-                    <button
-                      key={ns}
-                      onClick={() =>
-                        onUpdateStatus(campaign.id, ns)
-                      }
-                      className="px-2 py-1 rounded text-[10px] font-medium tracking-wider transition-all hover:opacity-80"
-                      style={{
-                        backgroundColor: nsStyle.bg,
-                        color: nsStyle.color,
-                        fontFamily: "var(--font-mono)",
-                        border: `1px solid ${nsStyle.color}33`,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {CAMPAIGN_STATUS_LABELS[ns].toUpperCase()}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+              → {actionLabel}
+            </button>
+          </div>
 
-          {/* Meta info */}
-          <div
-            className="rounded-md border p-3 space-y-2"
-            style={{
-              backgroundColor: "var(--bg-secondary)",
-              borderColor: "var(--border-subtle)",
-            }}
-          >
-            {campaign.budgetAmount != null && (
-              <div className="flex justify-between">
-                <span
-                  className="text-[10px] tracking-wider"
-                  style={{
-                    color: "var(--text-muted)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  BUDGET
-                </span>
-                <span
-                  className="text-xs font-medium"
-                  style={{
-                    color: "var(--accent-green)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  {campaign.budgetCurrency === "TRY"
-                    ? "₺"
-                    : campaign.budgetCurrency === "EUR"
-                    ? "€"
-                    : "$"}
+          {/* Meta info — compact */}
+          {(campaign.budgetAmount != null || campaign.startDate) && (
+            <div
+              className="flex items-center gap-4 text-[10px]"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              {campaign.budgetAmount != null && (
+                <span style={{ color: "var(--accent-green)" }}>
+                  {campaign.budgetCurrency === "TRY" ? "₺" : campaign.budgetCurrency === "EUR" ? "€" : "$"}
                   {campaign.budgetAmount.toLocaleString()}
                 </span>
-              </div>
-            )}
-            {campaign.startDate && (
-              <div className="flex justify-between">
-                <span
-                  className="text-[10px] tracking-wider"
-                  style={{
-                    color: "var(--text-muted)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  PERIOD
+              )}
+              {campaign.startDate && (
+                <span style={{ color: "var(--text-muted)" }}>
+                  {new Date(campaign.startDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  {campaign.endDate && ` → ${new Date(campaign.endDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
                 </span>
-                <span
-                  className="text-xs"
-                  style={{
-                    color: "var(--text-secondary)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  {new Date(
-                    campaign.startDate
-                  ).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                  {campaign.endDate &&
-                    ` → ${new Date(
-                      campaign.endDate
-                    ).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}`}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span
-                className="text-[10px] tracking-wider"
-                style={{
-                  color: "var(--text-muted)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                CREATED
-              </span>
-              <span
-                className="text-xs"
-                style={{
-                  color: "var(--text-secondary)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                {new Date(campaign.createdAt).toLocaleDateString(
-                  "en-US",
-                  { month: "short", day: "numeric", year: "numeric" }
-                )}
-              </span>
+              )}
             </div>
-          </div>
+          )}
 
           {/* Notes */}
           {campaign.notes && (
-            <div
-              className="rounded-md border p-3"
-              style={{
-                backgroundColor: "var(--bg-secondary)",
-                borderColor: "var(--border-subtle)",
-              }}
+            <p
+              className="text-[11px] leading-relaxed"
+              style={{ color: "var(--text-secondary)" }}
             >
-              <p
-                className="text-[10px] tracking-wider mb-1.5"
-                style={{
-                  color: "var(--text-muted)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                NOTES
-              </p>
-              <p
-                className="text-xs leading-relaxed"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {campaign.notes}
-              </p>
-            </div>
+              {campaign.notes}
+            </p>
           )}
 
-          {/* Match Settings */}
-          {campaign.brandId && (
-            <MatchSettingsPanel
-              campaignId={campaign.id}
-              keywords={matchKeywords}
-              onUpdate={() => {
-                fetch(`/api/campaigns/${campaign.id}`)
-                  .then(r => r.ok ? r.json() : null)
-                  .then(() => window.location.reload())
-                  .catch(() => {});
-              }}
-            />
-          )}
-
-          {/* Deliverable Tracking */}
-          {campaign.brandId && creators.length > 0 && (
-            <DeliverableTracker
-              campaignId={campaign.id}
-              creators={creators}
-              deliverables={deliverables}
-              onScanComplete={() => {
-                fetch(`/api/campaigns/${campaign.id}`)
-                  .then(r => r.ok ? r.json() : null)
-                  .then(() => window.location.reload())
-                  .catch(() => {});
-              }}
-            />
-          )}
-
-          {/* Creators Section */}
+          {/* ── Creators Section ── */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <span
@@ -1078,7 +975,113 @@ function CampaignDetailPanel({
               >
                 CREATORS · {creators.length}
               </span>
+              <button
+                onClick={() => { setShowPicker(!showPicker); setPickerQuery(""); }}
+                className="text-[10px] px-1.5 py-0.5 rounded hover:opacity-80 transition-all"
+                style={{
+                  backgroundColor: "var(--accent-green-glow)",
+                  color: "var(--accent-green)",
+                  fontFamily: "var(--font-mono)",
+                  border: "1px solid var(--accent-green)33",
+                  cursor: "pointer",
+                }}
+              >
+                + ADD
+              </button>
             </div>
+
+            {/* Creator Picker */}
+            {showPicker && (
+              <div
+                className="rounded-md border mb-2 overflow-hidden"
+                style={{
+                  backgroundColor: "var(--bg-secondary)",
+                  borderColor: "var(--border-default)",
+                }}
+              >
+                <div className="p-2">
+                  <input
+                    type="text"
+                    value={pickerQuery}
+                    onChange={(e) => {
+                      setPickerQuery(e.target.value);
+                      searchCreators(e.target.value);
+                    }}
+                    placeholder="Search creators..."
+                    className="w-full rounded-md border px-2.5 py-1.5 text-xs bg-transparent"
+                    style={{
+                      borderColor: "var(--border-default)",
+                      color: "var(--text-primary)",
+                    }}
+                    autoFocus
+                  />
+                </div>
+                <div style={{ maxHeight: "200px", overflowY: "auto" }}>
+                  {pickerLoading ? (
+                    <div className="px-3 py-3 text-center text-[10px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                      Loading…
+                    </div>
+                  ) : pickerResults.length === 0 ? (
+                    <div className="px-3 py-3 text-center text-[10px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                      No creators found
+                    </div>
+                  ) : (
+                    pickerResults.map((cr, i) => {
+                      const alreadyAdded = creators.some(
+                        (ec) =>
+                          (ec.instagramHandle && ec.instagramHandle === cr.instagramHandle) ||
+                          (ec.tiktokHandle && ec.tiktokHandle === cr.tiktokHandle)
+                      );
+                      return (
+                        <div
+                          key={`${cr.instagramHandle}-${cr.tiktokHandle}-${i}`}
+                          className="flex items-center justify-between px-3 py-2 transition-colors"
+                          style={{
+                            borderTop: "1px solid var(--border-subtle)",
+                            cursor: alreadyAdded ? "default" : "pointer",
+                            opacity: alreadyAdded ? 0.4 : 1,
+                          }}
+                          onClick={() => !alreadyAdded && handleAddCreator(cr)}
+                          onMouseEnter={(e) => { if (!alreadyAdded) (e.currentTarget.style.backgroundColor = "var(--bg-elevated)"); }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                              {cr.label}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {cr.instagramHandle && (
+                                <span className="text-[9px]" style={{ color: "#E1306C", fontFamily: "var(--font-mono)" }}>
+                                  @{cr.instagramHandle}
+                                </span>
+                              )}
+                              {cr.tiktokHandle && (
+                                <span className="text-[9px]" style={{ color: "#00f2ea", fontFamily: "var(--font-mono)" }}>
+                                  @{cr.tiktokHandle}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {alreadyAdded ? (
+                            <span className="text-[9px] shrink-0" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                              ADDED
+                            </span>
+                          ) : addingCreator === cr.label ? (
+                            <span className="text-[9px] shrink-0" style={{ color: "var(--accent-green)", fontFamily: "var(--font-mono)" }}>
+                              ADDING…
+                            </span>
+                          ) : (
+                            <span className="text-[9px] shrink-0" style={{ color: "var(--accent-green)", fontFamily: "var(--font-mono)" }}>
+                              + ADD
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
 
             {creators.length === 0 ? (
               <div
@@ -1092,7 +1095,7 @@ function CampaignDetailPanel({
                   className="text-[10px] mb-1"
                   style={{ color: "var(--text-muted)" }}
                 >
-                  No creators linked yet
+                  No creators added yet
                 </p>
                 <p
                   className="text-[9px]"
@@ -1101,7 +1104,7 @@ function CampaignDetailPanel({
                     opacity: 0.6,
                   }}
                 >
-                  Add creators from Workspace results or manually
+                  Use the + ADD button above to add creators from your library
                 </p>
               </div>
             ) : (
@@ -1116,7 +1119,7 @@ function CampaignDetailPanel({
                   (creator: CampaignCreator, i: number) => (
                     <div
                       key={creator.id}
-                      className="flex items-center gap-3 px-3 py-2.5"
+                      className="flex items-center gap-3 px-3 py-2.5 group"
                       style={{
                         borderBottom:
                           i < creators.length - 1
@@ -1141,44 +1144,69 @@ function CampaignDetailPanel({
                             <span
                               className="text-[9px]"
                               style={{
-                                color: "var(--text-muted)",
+                                color: "#E1306C",
                                 fontFamily: "var(--font-mono)",
                               }}
                             >
-                              IG: @{creator.instagramHandle}
+                              @{creator.instagramHandle}
                             </span>
                           )}
                           {creator.tiktokHandle && (
                             <span
                               className="text-[9px]"
                               style={{
-                                color: "var(--text-muted)",
+                                color: "#00f2ea",
                                 fontFamily: "var(--font-mono)",
                               }}
                             >
-                              TT: @{creator.tiktokHandle}
+                              @{creator.tiktokHandle}
                             </span>
                           )}
                         </div>
                       </div>
-                      <span
-                        className="text-[9px] px-1.5 py-0.5 rounded shrink-0"
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRemoveCreator(creator.id); }}
+                        className="text-[10px] opacity-30 hover:opacity-100 transition-opacity shrink-0"
                         style={{
-                          backgroundColor: "var(--bg-elevated)",
-                          color: "var(--text-muted)",
-                          fontFamily: "var(--font-mono)",
-                          border:
-                            "1px solid var(--border-subtle)",
+                          background: "none",
+                          border: "none",
+                          color: "var(--accent-pink)",
+                          cursor: "pointer",
+                          padding: "2px 4px",
                         }}
+                        title="Remove creator"
                       >
-                        {creator.role.toUpperCase()}
-                      </span>
+                        {removingCreator === creator.id ? "…" : "✕"}
+                      </button>
                     </div>
                   )
                 )}
               </div>
             )}
           </div>
+
+          {/* Match Settings — only for brand-linked campaigns */}
+          {campaign.brandId && (
+            <MatchSettingsPanel
+              campaignId={campaign.id}
+              keywords={matchKeywords}
+              onUpdate={() => {
+                window.dispatchEvent(new CustomEvent("campaign-refresh", { detail: campaign.id }));
+              }}
+            />
+          )}
+
+          {/* Content Tracking — only show when there are creators and a brand */}
+          {campaign.brandId && creators.length > 0 && (
+            <DeliverableTracker
+              campaignId={campaign.id}
+              creators={creators}
+              deliverables={deliverables}
+              onScanComplete={() => {
+                window.dispatchEvent(new CustomEvent("campaign-refresh", { detail: campaign.id }));
+              }}
+            />
+          )}
 
           {/* Tags */}
           {campaign.tags &&
@@ -1208,7 +1236,6 @@ function CampaignDetailPanel({
   );
 }
 
-// ---------------------------------------------------------------------------
 // Match Settings — campaign-level custom keywords for deliverable detection
 // ---------------------------------------------------------------------------
 
@@ -1606,88 +1633,8 @@ function DeliverableTracker({
                       ⏳ PENDING
                     </span>
                   )}
-                  <button
-                    onClick={() => {
-                      setAddingLink(addingLink === creator.id ? null : creator.id);
-                      setManualUrl("");
-                      setAddingStatus(null);
-                    }}
-                    className="text-[9px] px-1.5 py-0.5 rounded hover:opacity-80"
-                    style={{
-                      backgroundColor: "var(--bg-secondary)",
-                      color: "var(--text-muted)",
-                      fontFamily: "var(--font-mono)",
-                      border: "1px solid var(--border-subtle)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    + ADD LINK
-                  </button>
                 </div>
               </div>
-
-              {/* Manual link form */}
-              {addingLink === creator.id && (
-                <div
-                  className="px-3 py-2 space-y-1.5"
-                  style={{ borderBottom: "1px solid var(--border-subtle)" }}
-                >
-                  <div className="flex gap-1.5">
-                    <select
-                      value={manualPlatform}
-                      onChange={(e) => setManualPlatform(e.target.value as "instagram" | "tiktok")}
-                      className="rounded-md border px-2 py-1 text-[10px] bg-transparent"
-                      style={{
-                        borderColor: "var(--border-default)",
-                        color: "var(--text-primary)",
-                        fontFamily: "var(--font-mono)",
-                      }}
-                    >
-                      <option value="instagram">📸 IG</option>
-                      <option value="tiktok">🎵 TT</option>
-                    </select>
-                    <input
-                      type="url"
-                      value={manualUrl}
-                      onChange={(e) => setManualUrl(e.target.value)}
-                      placeholder="https://www.instagram.com/p/..."
-                      className="flex-1 rounded-md border px-2 py-1 text-[10px] bg-transparent"
-                      style={{
-                        borderColor: "var(--border-default)",
-                        color: "var(--text-primary)",
-                        fontFamily: "var(--font-mono)",
-                      }}
-                    />
-                    <button
-                      onClick={() => handleAddManual(creator.id)}
-                      className="px-2 py-1 rounded-md text-[9px] font-medium tracking-wider"
-                      style={{
-                        backgroundColor: "var(--accent-green-glow)",
-                        color: "var(--accent-green)",
-                        fontFamily: "var(--font-mono)",
-                        border: "1px solid var(--accent-green)33",
-                        cursor: "pointer",
-                      }}
-                    >
-                      ADD
-                    </button>
-                  </div>
-                  {addingStatus && (
-                    <p
-                      className="text-[9px]"
-                      style={{
-                        color: addingStatus.includes("Error") || addingStatus.includes("already")
-                          ? "var(--accent-pink)"
-                          : "var(--text-muted)",
-                        fontFamily: "var(--font-mono)",
-                      }}
-                    >
-                      {addingStatus}
-                    </p>
-                  )}
-                </div>
-              )}
-
               {/* Deliverable posts */}
               {creatorDeliverables.map((d, i) => (
                 <div
