@@ -19,8 +19,10 @@
     "signingIn": "Signing in...",
     "signInTitle": "Sign In",
     "signInSubtitle": "Enter your credentials to access the workspace.",
-    "signUpTitle": "Sign Up",
-    "signUpSubtitle": "Create your account to get started.",
+    "signUpTitle": "Create Account",
+    "signUpSubtitle": "Sign up to request workspace access. An admin must approve your account.",
+    "signUpLoading": "Creating account...",
+    "signUpButton": "Create Account",
     "noAccount": "Don't have an account?",
     "hasAccount": "Already have an account?",
     "name": "Name",
@@ -28,13 +30,23 @@
     "signUpFailed": "Sign up failed. Please try again."
   },
   "nav": {
+    "analyze": "Analyze",
     "workspace": "Workspace",
     "campaigns": "Campaigns",
+    "creators": "Creators",
     "warehouse": "Warehouse",
     "coverage": "Coverage",
     "history": "History",
     "admin": "Admin",
-    "settings": "Settings"
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "displayName": "Display Name",
+    "team": "Team",
+    "role": "Role",
+    "theme": "Theme",
+    "dark": "Dark",
+    "light": "Light",
+    "system": "System"
   },
   "workspace": {
     "title": "Creator Analysis",

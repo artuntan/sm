@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslations } from "next-intl";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Modal } from "@/app/components/ui/Modal";
@@ -23,7 +24,7 @@ import type { ReactNode } from "react";
 // ---------------------------------------------------------------------------
 
 type NavTab = {
-  label: string;
+  labelKey: string;
   href: string;
   match: (path: string) => boolean;
   accent?: boolean;
@@ -48,10 +49,10 @@ type AppearancePrefs = {
 // ---------------------------------------------------------------------------
 
 const TABS: NavTab[] = [
-  { label: "ANALYZE", href: "/", match: (p) => p === "/" },
-  { label: "CAMPAIGNS", href: "/campaigns", match: (p) => p.startsWith("/campaigns") },
-  { label: "CREATORS", href: "/warehouse", match: (p) => p.startsWith("/warehouse") },
-  { label: "COVERAGE", href: "/coverage", match: (p) => p.startsWith("/coverage") },
+  { labelKey: "analyze", href: "/", match: (p) => p === "/" },
+  { labelKey: "campaigns", href: "/campaigns", match: (p) => p.startsWith("/campaigns") },
+  { labelKey: "creators", href: "/warehouse", match: (p) => p.startsWith("/warehouse") },
+  { labelKey: "coverage", href: "/coverage", match: (p) => p.startsWith("/coverage") },
 ];
 
 const PREFS_KEY = "cb-appearance";
@@ -133,6 +134,8 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const t = useTranslations("nav");
+  const tc = useTranslations("common");
   // Initialize from cache immediately — no flash of empty state
   const [identity, setIdentity] = useState<Identity | null>(_cachedIdentity);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -298,7 +301,7 @@ export function AppShell({
                       color: isActive ? "var(--text-primary)" : "var(--text-muted)",
                     }}
                   >
-                    {tab.label}
+                    {t(tab.labelKey).toUpperCase()}
                   </Link>
                 );
               })}
@@ -327,7 +330,7 @@ export function AppShell({
                   className="text-[9px] tracking-wider hidden lg:inline"
                   style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}
                 >
-                  HISTORY
+                  {t("history").toUpperCase()}
                 </span>
               </Link>
 
@@ -405,7 +408,7 @@ export function AppShell({
                       <circle cx="8" cy="6" r="1" fill="var(--bg-primary)" stroke="currentColor" strokeWidth="0.8" />
                       <circle cx="5" cy="9" r="1" fill="var(--bg-primary)" stroke="currentColor" strokeWidth="0.8" />
                     </svg>
-                    <span>Settings</span>
+                    <span>{t("settings")}</span>
                   </button>
 
                   {/* Admin — only for authorized roles */}
@@ -421,7 +424,7 @@ export function AppShell({
                           <path d="M6 1L1.5 3.5v2.5c0 2.8 1.9 5.1 4.5 6 2.6-.9 4.5-3.2 4.5-6V3.5L6 1z" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" strokeLinejoin="round" />
                           <path d="M4.5 6l1 1 2-2" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
-                        <span>Admin</span>
+                        <span>{t("admin")}</span>
                       </Link>
                     </>
                   )}
@@ -430,18 +433,18 @@ export function AppShell({
 
                   {/* Theme section */}
                   <div className="account-menu-section">
-                    <span className="account-menu-section-label">THEME</span>
+                    <span className="account-menu-section-label">{t("theme").toUpperCase()}</span>
                     <div className="account-menu-toggle-row">
                       <div className="account-toggle-group">
-                        {(["dark", "light", "system"] as const).map((t) => (
+                        {(["dark", "light", "system"] as const).map((themeOpt) => (
                           <button
-                            key={t}
-                            className={`account-toggle-btn ${prefs.theme === t ? "active" : ""}`}
-                            onClick={() => setTheme(t)}
+                            key={themeOpt}
+                            className={`account-toggle-btn ${prefs.theme === themeOpt ? "active" : ""}`}
+                            onClick={() => setTheme(themeOpt)}
                             role="menuitemradio"
-                            aria-checked={prefs.theme === t}
+                            aria-checked={prefs.theme === themeOpt}
                           >
-                            {t === "dark" ? "Dark" : t === "light" ? "Light" : "System"}
+                            {t(themeOpt)}
                           </button>
                         ))}
                       </div>
@@ -460,7 +463,7 @@ export function AppShell({
                       <path d="M4.5 10.5H2.5a1 1 0 01-1-1v-7a1 1 0 011-1h2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
                       <path d="M8 8.5l2.5-2.5L8 3.5M5 6h5.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    <span>Sign out</span>
+                    <span>{t("signOut")}</span>
                   </button>
                 </div>
               )}
@@ -482,7 +485,7 @@ export function AppShell({
         <Modal
           open={settingsOpen}
           onClose={() => setSettingsOpen(false)}
-          title="SETTINGS"
+          title={t("settings").toUpperCase()}
           width="400px"
         >
           {/* ── Identity Section ── */}
@@ -522,7 +525,7 @@ export function AppShell({
               className="text-[9px] tracking-wider font-medium"
               style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginBottom: "6px" }}
             >
-              DISPLAY NAME
+              {t("displayName").toUpperCase()}
             </p>
             <div className="flex gap-2">
               <input
@@ -556,7 +559,7 @@ export function AppShell({
                   transition: "all 0.15s ease",
                 }}
               >
-                {saving ? "···" : "SAVE"}
+                {saving ? "···" : tc("save").toUpperCase()}
               </button>
             </div>
             {saveMsg && (
@@ -582,7 +585,7 @@ export function AppShell({
                   className="text-[9px] tracking-wider font-medium"
                   style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
                 >
-                  TEAM
+                  {t("team").toUpperCase()}
                 </span>
                 <span
                   className="text-xs font-medium"
@@ -599,7 +602,7 @@ export function AppShell({
                 className="text-[9px] tracking-wider font-medium"
                 style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
               >
-                ROLE
+                {t("role").toUpperCase()}
               </span>
               <span
                 className="text-xs font-medium"
@@ -640,7 +643,7 @@ export function AppShell({
               <path d="M4.5 10.5H2.5a1 1 0 01-1-1v-7a1 1 0 011-1h2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
               <path d="M8 8.5l2.5-2.5L8 3.5M5 6h5.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <span>SIGN OUT</span>
+            <span>{t("signOut").toUpperCase()}</span>
           </button>
         </Modal>
       )}

@@ -19,8 +19,10 @@
     "signingIn": "Giriş yapılıyor...",
     "signInTitle": "Giriş Yap",
     "signInSubtitle": "Çalışma alanına erişmek için bilgilerinizi girin.",
-    "signUpTitle": "Kayıt Ol",
-    "signUpSubtitle": "Başlamak için hesabınızı oluşturun.",
+    "signUpTitle": "Hesap Oluştur",
+    "signUpSubtitle": "Çalışma alanı erişimi talep etmek için kayıt olun. Hesabınızın bir yönetici tarafından onaylanması gerekir.",
+    "signUpLoading": "Hesap oluşturuluyor...",
+    "signUpButton": "Hesap Oluştur",
     "noAccount": "Hesabınız yok mu?",
     "hasAccount": "Zaten hesabınız var mı?",
     "name": "İsim",
@@ -28,13 +30,23 @@
     "signUpFailed": "Kayıt başarısız oldu. Lütfen tekrar deneyin."
   },
   "nav": {
+    "analyze": "Analiz",
     "workspace": "Çalışma Alanı",
     "campaigns": "Kampanyalar",
+    "creators": "İçerik Üreticiler",
     "warehouse": "Veri Deposu",
     "coverage": "Kapsam",
     "history": "Geçmiş",
     "admin": "Yönetim",
-    "settings": "Ayarlar"
+    "settings": "Ayarlar",
+    "signOut": "Çıkış yap",
+    "displayName": "Görünen Ad",
+    "team": "Ekip",
+    "role": "Rol",
+    "theme": "Tema",
+    "dark": "Koyu",
+    "light": "Açık",
+    "system": "Sistem"
   },
   "workspace": {
     "title": "İçerik Üretici Analizi",

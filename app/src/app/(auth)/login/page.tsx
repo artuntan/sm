@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { signIn } from "@/lib/auth/client";
 import { useRouter } from "next/navigation";
 import { TypeOfMark } from "@/app/components/ui/TypeOfBrand";
@@ -43,6 +44,8 @@ function BlurredProductSkeleton() {
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useTranslations("auth");
+  const tc = useTranslations("common");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -56,12 +59,12 @@ export default function LoginPage() {
     try {
       const result = await signIn.email({ email, password });
       if (result.error) {
-        setError(result.error.message || "Sign in failed.");
+        setError(result.error.message || t("signInFailed"));
       } else {
         router.push("/");
       }
     } catch {
-      setError("Sign in failed. Please try again.");
+      setError(t("signInFailed"));
     } finally {
       setLoading(false);
     }
@@ -84,10 +87,10 @@ export default function LoginPage() {
         </div>
 
         <h1 className="text-lg font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-          Sign In
+          {t("signInTitle")}
         </h1>
         <p className="text-[11px] mb-5" style={{ color: "var(--text-muted)" }}>
-          Enter your credentials to access the workspace.
+          {t("signInSubtitle")}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
@@ -96,7 +99,7 @@ export default function LoginPage() {
               className="block text-[9px] font-semibold mb-1 tracking-widest"
               style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
             >
-              EMAIL
+              {t("email").toUpperCase()}
             </label>
             <input
               type="email"
@@ -118,7 +121,7 @@ export default function LoginPage() {
               className="block text-[9px] font-semibold mb-1 tracking-widest"
               style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
             >
-              PASSWORD
+              {t("password").toUpperCase()}
             </label>
             <input
               type="password"
@@ -150,14 +153,14 @@ export default function LoginPage() {
               opacity: loading ? 0.6 : 1,
             }}
           >
-            {loading ? "SIGNING IN..." : "SIGN IN"}
+            {loading ? t("signingIn").toUpperCase() : t("signInTitle").toUpperCase()}
           </button>
         </form>
 
         <p className="text-[11px] mt-4 text-center" style={{ color: "var(--text-muted)" }}>
-          Don&apos;t have an account?{" "}
+          {t("noAccount")}{" "}
           <a href="/signup" className="font-medium" style={{ color: "var(--accent-green)" }}>
-            Sign up
+            {tc("signUp")}
           </a>
         </p>
       </div>

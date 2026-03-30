@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { useTranslations } from "next-intl";
 import { signUp } from "@/lib/auth/client";
 import { useRouter } from "next/navigation";
 import { TypeOfMark } from "@/app/components/ui/TypeOfBrand";
@@ -32,6 +33,8 @@ function BlurredProductSkeleton() {
 
 export default function SignupPage() {
   const router = useRouter();
+  const t = useTranslations("auth");
+  const tc = useTranslations("common");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,12 +49,12 @@ export default function SignupPage() {
     try {
       const result = await signUp.email({ name, email, password });
       if (result.error) {
-        setError(result.error.message || "Sign up failed.");
+        setError(result.error.message || t("signUpFailed"));
       } else {
         router.push("/");
       }
     } catch {
-      setError("Sign up failed. Please try again.");
+      setError(t("signUpFailed"));
     } finally {
       setLoading(false);
     }
@@ -74,16 +77,16 @@ export default function SignupPage() {
         </div>
 
         <h1 className="text-lg font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-          Create Account
+          {t("signUpTitle")}
         </h1>
         <p className="text-[11px] mb-5" style={{ color: "var(--text-muted)" }}>
-          Sign up to request workspace access. An admin must approve your account.
+          {t("signUpSubtitle")}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div>
             <label className="block text-[9px] font-semibold mb-1 tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-              NAME
+              {t("name").toUpperCase()}
             </label>
             <input
               type="text" value={name} onChange={(e) => setName(e.target.value)} required
@@ -94,7 +97,7 @@ export default function SignupPage() {
 
           <div>
             <label className="block text-[9px] font-semibold mb-1 tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-              EMAIL
+              {t("email").toUpperCase()}
             </label>
             <input
               type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
@@ -105,7 +108,7 @@ export default function SignupPage() {
 
           <div>
             <label className="block text-[9px] font-semibold mb-1 tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-              PASSWORD
+              {t("password").toUpperCase()}
             </label>
             <input
               type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8}
@@ -123,14 +126,14 @@ export default function SignupPage() {
             className="w-full py-2 rounded text-[10px] font-semibold tracking-wider transition-all"
             style={{ backgroundColor: "var(--accent-green)", color: "var(--text-inverse)", fontFamily: "var(--font-mono)", opacity: loading ? 0.6 : 1 }}
           >
-            {loading ? "CREATING ACCOUNT..." : "CREATE ACCOUNT"}
+            {loading ? t("signUpLoading").toUpperCase() : t("signUpButton").toUpperCase()}
           </button>
         </form>
 
         <p className="text-[11px] mt-4 text-center" style={{ color: "var(--text-muted)" }}>
-          Already have an account?{" "}
+          {t("hasAccount")}{" "}
           <a href="/login" className="font-medium" style={{ color: "var(--accent-green)" }}>
-            Sign in
+            {tc("signIn")}
           </a>
         </p>
       </div>
