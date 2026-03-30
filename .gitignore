@@ -20,6 +20,9 @@ node_modules/
 # Personal docs (per-developer notes, not shared)
 docs/umut/
 
+# SST
+.sst/
+
 # CDK / Infrastructure outputs
 cdk.out/
 cdk.context.json
