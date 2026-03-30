@@ -222,34 +222,28 @@ export default function CampaignsPage() {
     <div>
       {/* ── Page Header ── */}
       <div
-        className="flex items-center justify-between mb-5"
+        className="flex items-center justify-between mb-4"
         style={{ minHeight: "32px" }}
       >
-        <div className="flex items-center gap-2.5">
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: "var(--accent-blue)" }}
-          />
-          <span
-            className="text-xs font-medium tracking-wider"
+        <div>
+          <h1
+            className="text-[13px] font-semibold tracking-wider"
             style={{
-              color: "var(--text-muted)",
+              color: "var(--text-primary)",
               fontFamily: "var(--font-mono)",
+              letterSpacing: "0.05em",
+              margin: 0,
+              textTransform: "uppercase",
             }}
           >
-            CAMPAIGNS
-          </span>
-          <span
-            className="text-xs px-1.5 py-0.5 rounded"
-            style={{
-              backgroundColor: "var(--bg-elevated)",
-              color: "var(--text-muted)",
-              fontFamily: "var(--font-mono)",
-              border: "1px solid var(--border-subtle)",
-            }}
+            Campaigns
+          </h1>
+          <p
+            className="text-[11px]"
+            style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", margin: "4px 0 0 0" }}
           >
-            {campaigns.length}
-          </span>
+            {campaigns.length} campaign{campaigns.length !== 1 ? "s" : ""}
+          </p>
         </div>
 
         <button

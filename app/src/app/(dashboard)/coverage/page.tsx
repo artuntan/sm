@@ -364,50 +364,44 @@ export default function CoveragePage() {
     : [];
 
   return (
-    <div style={{ padding: "32px 40px", maxWidth: 1280, margin: "0 auto" }}>
+    <div>
       {/* Header */}
-      <div style={{ marginBottom: 32 }}>
+      <div style={{ marginBottom: 16 }}>
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 12,
-            marginBottom: 8,
+            justifyContent: "space-between",
+            minHeight: 32,
           }}
         >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "var(--accent-green)",
-              display: "inline-block",
-            }}
-          />
-          <h1
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              letterSpacing: "0.08em",
-              color: "var(--text-primary)",
-              textTransform: "uppercase",
-              margin: 0,
-            }}
-          >
-            Coverage
-          </h1>
+          <div>
+            <h1
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: "0.05em",
+                color: "var(--text-primary)",
+                textTransform: "uppercase",
+                fontFamily: "var(--font-mono)",
+                margin: 0,
+              }}
+            >
+              Coverage
+            </h1>
+            <p
+              style={{
+                fontSize: 11,
+                color: "var(--text-muted)",
+                margin: "4px 0 0 0",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              Which recipe/taste content on Instagram + TikTok is missing from
+              Facebook, YouTube Shorts, and Pinterest?
+            </p>
+          </div>
         </div>
-        <p
-          style={{
-            fontSize: 12,
-            color: "var(--text-muted)",
-            margin: 0,
-            lineHeight: 1.5,
-          }}
-        >
-          Which recipe/taste content on Instagram + TikTok is missing from
-          Facebook, YouTube Shorts, and Pinterest?
-        </p>
       </div>
 
       {/* Controls Row */}
@@ -416,7 +410,7 @@ export default function CoveragePage() {
           display: "flex",
           alignItems: "center",
           gap: 12,
-          marginBottom: 24,
+          marginBottom: 16,
           flexWrap: "wrap",
         }}
       >

@@ -1003,9 +1003,9 @@ export default function WarehousePage() {
   });
 
   return (
-    <div style={{ maxWidth: "1100px", margin: "0 auto", padding: compact ? "12px 12px" : "20px 16px" }}>
+    <div>
       {/* Header */}
-      <div style={{ marginBottom: compact ? "14px" : "20px" }}>
+      <div style={{ marginBottom: compact ? "14px" : "16px" }}>
         <div
           style={{
             display: "flex",

@@ -1453,38 +1453,47 @@ function BatchIntakePanel({
 
   return (
     <div className="animate-fade-in">
-      {/* ── Hero Band ─────────────────────────────────────────────── */}
+      {/* ── Page Header ─────────────────────────────────── */}
       <div
-        className="rounded-md border p-5 mb-3 animate-slide-up"
-        style={{ backgroundColor: "var(--bg-shell)", borderColor: "var(--border-default)" }}
+        className="flex items-center justify-between mb-4 animate-slide-up"
+        style={{ minHeight: "32px" }}
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
-              Analyze Creators
-            </h1>
-            <p className="text-xs mt-1.5" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
-              Paste creator handles — one per row, Instagram and TikTok on the same line.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <span className="cap-chip">200+ CREATORS</span>
-            <span className="cap-chip">INSTAGRAM</span>
-            <span className="cap-chip">TIKTOK</span>
-            <span className="cap-chip">CSV · TSV · SHEETS</span>
-            <button
-              onClick={() => setGuideOpen(true)}
-              className="guide-trigger"
-              aria-label="Open system guide"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="8" cy="8" r="6.5" />
-                <path d="M6.5 6.5a1.5 1.5 0 1 1 1.5 1.5v1.5" strokeLinecap="round" />
-                <circle cx="8" cy="12" r="0.5" fill="currentColor" stroke="none" />
-              </svg>
-              GUIDE
-            </button>
-          </div>
+        <div>
+          <h1
+            className="text-[13px] font-semibold tracking-wider"
+            style={{
+              color: "var(--text-primary)",
+              fontFamily: "var(--font-mono)",
+              letterSpacing: "0.05em",
+              margin: 0,
+              textTransform: "uppercase",
+            }}
+          >
+            Analyze
+          </h1>
+          <p
+            className="text-[11px] mt-1"
+            style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", margin: "4px 0 0 0" }}
+          >
+            Paste creator handles — one per row, Instagram and TikTok on the same line
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          <span className="cap-chip">INSTAGRAM</span>
+          <span className="cap-chip">TIKTOK</span>
+          <span className="cap-chip">CSV · TSV · SHEETS</span>
+          <button
+            onClick={() => setGuideOpen(true)}
+            className="guide-trigger"
+            aria-label="Open system guide"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="8" cy="8" r="6.5" />
+              <path d="M6.5 6.5a1.5 1.5 0 1 1 1.5 1.5v1.5" strokeLinecap="round" />
+              <circle cx="8" cy="12" r="0.5" fill="currentColor" stroke="none" />
+            </svg>
+            GUIDE
+          </button>
         </div>
       </div>
 
