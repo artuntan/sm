@@ -46,10 +46,9 @@ type AppearancePrefs = {
 // ---------------------------------------------------------------------------
 
 const TABS: NavTab[] = [
-  { label: "WORKSPACE", href: "/", match: (p) => p === "/" },
-  { label: "HISTORY", href: "/history", match: (p) => p.startsWith("/history") },
+  { label: "ANALYZE", href: "/", match: (p) => p === "/" },
   { label: "CAMPAIGNS", href: "/campaigns", match: (p) => p.startsWith("/campaigns") },
-  { label: "WAREHOUSE", href: "/warehouse", match: (p) => p.startsWith("/warehouse") },
+  { label: "CREATORS", href: "/warehouse", match: (p) => p.startsWith("/warehouse") },
   { label: "COVERAGE", href: "/coverage", match: (p) => p.startsWith("/coverage") },
 ];
 
@@ -258,6 +257,10 @@ export function AppShell({
           scrollbar-width: none;
         }
         .shell-nav-scroll::-webkit-scrollbar { display: none; }
+        .shell-utility-btn:hover {
+          background: var(--bg-elevated) !important;
+          color: var(--text-secondary) !important;
+        }
         @media (max-width: 639px) {
           .shell-header-inner { padding-left: 8px; padding-right: 8px; }
           .shell-nav-link { padding-left: 6px; padding-right: 6px; font-size: 9px; }
@@ -306,9 +309,35 @@ export function AppShell({
             </nav>
           </div>
 
-          {/* Right: Identity + Account Menu */}
+          {/* Right: Utility Actions + Identity + Account Menu */}
           {identity && (
-            <div className="relative flex items-center gap-1.5 shrink-0 ml-1">
+            <div className="relative flex items-center gap-1 shrink-0 ml-1">
+              {/* History — utility action (personal activity log) */}
+              <Link
+                href="/history"
+                className="shell-utility-btn flex items-center gap-1 px-1.5 py-1 rounded transition-all"
+                style={{
+                  background: pathname.startsWith("/history") ? "var(--accent-green-glow)" : "transparent",
+                  border: pathname.startsWith("/history") ? "1px solid var(--border-accent)" : "1px solid transparent",
+                  color: pathname.startsWith("/history") ? "var(--accent-green)" : "var(--text-muted)",
+                }}
+                title="Batch history"
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M8 4.5V8l2.5 1.5" />
+                </svg>
+                <span
+                  className="text-[9px] tracking-wider hidden lg:inline"
+                  style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}
+                >
+                  HISTORY
+                </span>
+              </Link>
+
+              {/* Separator */}
+              <div className="hidden sm:block w-px h-3.5 mx-0.5" style={{ backgroundColor: "var(--border-subtle)" }} />
+
               {identity.teamName && (
                 <span
                   className="text-[9px] px-1.5 py-0.5 rounded hidden md:inline-block"

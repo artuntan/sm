@@ -244,7 +244,7 @@ export default function HistoryPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-[11px] font-semibold tracking-wider" style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-          ANALYSIS HISTORY
+          HISTORY
         </h1>
         <div className="flex items-center gap-2">
           <span className="text-[9px]" style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>

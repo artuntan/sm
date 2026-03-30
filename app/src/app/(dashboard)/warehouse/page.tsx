@@ -1026,7 +1026,7 @@ export default function WarehousePage() {
                 margin: 0,
               }}
             >
-              INFLUENCER WAREHOUSE
+              CREATORS
             </h1>
             <p
               style={{
@@ -1036,7 +1036,7 @@ export default function WarehousePage() {
                 fontFamily: "var(--font-mono)",
               }}
             >
-              All scanned creators — click {compact ? "" : "a row "}to view benchmark summary
+              All scanned creators — click {compact ? "" : "a row "}to view benchmarks
             </p>
           </div>
           <button

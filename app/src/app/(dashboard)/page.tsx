@@ -1461,10 +1461,10 @@ function BatchIntakePanel({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold leading-tight" style={{ color: "var(--text-primary)" }}>
-              Batch Creator Analysis
+              Analyze Creators
             </h1>
             <p className="text-xs mt-1.5" style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>
-              Paste creator handles — one row per influencer, Instagram and TikTok on the same line.
+              Paste creator handles — one per row, Instagram and TikTok on the same line.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap">

@@ -394,7 +394,7 @@ export default function CoveragePage() {
               margin: 0,
             }}
           >
-            Content Coverage Intelligence
+            Coverage
           </h1>
         </div>
         <p
