@@ -79,14 +79,8 @@ export default function LoginPage() {
           boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
         }}
       >
-        <div className="flex items-center gap-2 mb-5">
-          <TypeOfMark size={16} />
-          <span
-            className="text-[10px] font-semibold tracking-wider"
-            style={{ color: "var(--typeof-brand)", fontFamily: "var(--font-mono)" }}
-          >
-            type of
-          </span>
+        <div className="flex items-center mb-5">
+          <TypeOfMark size={18} />
         </div>
 
         <h1 className="text-lg font-semibold mb-1" style={{ color: "var(--text-primary)" }}>

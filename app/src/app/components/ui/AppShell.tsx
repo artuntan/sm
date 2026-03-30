@@ -280,14 +280,8 @@ export function AppShell({
         <div className="shell-header-inner mx-auto px-4 flex items-center justify-between" style={{ maxWidth, height: "40px" }}>
           {/* Left: Logo + Scrollable Tabs */}
           <div className="flex items-center gap-0.5 min-w-0 flex-1">
-            <Link href="/" className="flex items-center gap-2 mr-2 shrink-0">
-              <TypeOfMark size={18} />
-              <span
-                className="text-[11px] font-semibold tracking-wider hidden md:inline"
-                style={{ color: "var(--typeof-brand)", fontFamily: "var(--font-mono)" }}
-              >
-                type of
-              </span>
+            <Link href="/" className="flex items-center mr-3 shrink-0">
+              <TypeOfMark size={20} />
             </Link>
 
             <nav className="shell-nav-scroll">
