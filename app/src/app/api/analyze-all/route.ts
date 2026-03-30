@@ -24,9 +24,6 @@ import { estimateCarouselVisibility } from "@/lib/domain/carousel-visibility";
 import { getCachedProviderResult, cacheProviderResult } from "@/lib/services/scan-cache-service";
 import { ingestContentItems } from "@/lib/services/media-warehouse-service";
 import { updateScanProfile } from "@/lib/services/adaptive-scan-service";
-import { influencerIdentity } from "@/lib/db/schema";
-import { db } from "@/lib/db";
-import { eq } from "drizzle-orm";
 
 const AnalyzeAllSchema = z.object({
   instagram: z
@@ -288,40 +285,14 @@ export async function POST(request: NextRequest) {
     platforms,
   };
 
-  // Auto-link identities when both platforms are provided
-  if (instagram && tiktok) {
-    try {
-      const igNorm = instagram.toLowerCase().trim();
-      const ttNorm = tiktok.toLowerCase().trim();
-      const now = new Date().toISOString();
-
-      // Check if either username already has an identity
-      const byIg = db.select({ id: influencerIdentity.id }).from(influencerIdentity)
-        .where(eq(influencerIdentity.instagramUsername, igNorm)).get();
-      const byTt = db.select({ id: influencerIdentity.id }).from(influencerIdentity)
-        .where(eq(influencerIdentity.tiktokUsername, ttNorm)).get();
-
-      if (byIg) {
-        db.update(influencerIdentity)
-          .set({ tiktokUsername: ttNorm, updatedAt: now })
-          .where(eq(influencerIdentity.id, byIg.id)).run();
-      } else if (byTt) {
-        db.update(influencerIdentity)
-          .set({ instagramUsername: igNorm, updatedAt: now })
-          .where(eq(influencerIdentity.id, byTt.id)).run();
-      } else {
-        db.insert(influencerIdentity).values({
-          id: `identity_${Date.now()}`,
-          instagramUsername: igNorm,
-          tiktokUsername: ttNorm,
-          displayName: igNorm,
-          createdAt: now,
-          updatedAt: now,
-        }).run();
-      }
-    } catch (err) {
-      console.error("[identity] Auto-link error:", err);
-    }
+  // Auto-link influencer identities — every scan creates/updates an identity
+  try {
+    const { ensureIdentity } = await import("@/lib/services/identity-service");
+    const igNorm = instagram?.toLowerCase().trim() || null;
+    const ttNorm = tiktok?.toLowerCase().trim() || null;
+    ensureIdentity(igNorm, ttNorm);
+  } catch (err) {
+    console.error("[identity] Auto-link error:", err);
   }
 
   return NextResponse.json(response);

@@ -727,7 +727,6 @@ function CampaignDetailPanel({
   const creators = campaign.creators || [];
   const deliverables = campaign.deliverables || [];
   const matchKeywords: string[] = campaign.matchKeywords || [];
-  const currentStatus = campaign.status as CampaignStatus;
 
   // Creator picker state
   const [showPicker, setShowPicker] = useState(false);
@@ -741,6 +740,12 @@ function CampaignDetailPanel({
   const [addingCreator, setAddingCreator] = useState<string | null>(null);
   const [removingCreator, setRemovingCreator] = useState<string | null>(null);
 
+  type WarehouseIdentity = {
+    displayName?: string | null;
+    instagramUsername?: string | null;
+    tiktokUsername?: string | null;
+  };
+
   // Fetch warehouse creators for picker
   const searchCreators = useCallback(async (q: string) => {
     setPickerLoading(true);
@@ -748,22 +753,34 @@ function CampaignDetailPanel({
       const res = await fetch("/api/warehouse");
       if (!res.ok) return;
       const data = await res.json();
-      const identities = data.identities || [];
+      const identities: WarehouseIdentity[] = data.identities || [];
       const query = q.toLowerCase().trim();
       const results = identities
-        .filter((id: { instagramHandle?: string; tiktokHandle?: string; label?: string }) => {
+        .filter((identity) => {
+          const instagramHandle = identity.instagramUsername || "";
+          const tiktokHandle = identity.tiktokUsername || "";
+          const label =
+            identity.displayName ||
+            identity.instagramUsername ||
+            identity.tiktokUsername ||
+            "";
+
           if (!query) return true;
           return (
-            (id.instagramHandle || "").toLowerCase().includes(query) ||
-            (id.tiktokHandle || "").toLowerCase().includes(query) ||
-            (id.label || "").toLowerCase().includes(query)
+            instagramHandle.toLowerCase().includes(query) ||
+            tiktokHandle.toLowerCase().includes(query) ||
+            label.toLowerCase().includes(query)
           );
         })
         .slice(0, 8)
-        .map((id: { instagramHandle?: string; tiktokHandle?: string; label?: string }) => ({
-          instagramHandle: id.instagramHandle || null,
-          tiktokHandle: id.tiktokHandle || null,
-          label: id.label || id.instagramHandle || id.tiktokHandle || "—",
+        .map((identity) => ({
+          instagramHandle: identity.instagramUsername || null,
+          tiktokHandle: identity.tiktokUsername || null,
+          label:
+            identity.displayName ||
+            identity.instagramUsername ||
+            identity.tiktokUsername ||
+            "—",
         }));
       setPickerResults(results);
     } catch {
@@ -1425,10 +1442,6 @@ function DeliverableTracker({
   const [scanning, setScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [addingLink, setAddingLink] = useState<string | null>(null); // creatorId
-  const [manualUrl, setManualUrl] = useState("");
-  const [manualPlatform, setManualPlatform] = useState<"instagram" | "tiktok">("instagram");
-  const [addingStatus, setAddingStatus] = useState<string | null>(null);
 
   const handleScan = useCallback(async () => {
     setScanning(true);
@@ -1456,33 +1469,6 @@ function DeliverableTracker({
     }
     setScanning(false);
   }, [campaignId, onScanComplete]);
-
-  const handleAddManual = useCallback(async (creatorId: string) => {
-    if (!manualUrl.trim()) return;
-    setAddingStatus("Adding…");
-    try {
-      const res = await fetch(`/api/campaigns/${campaignId}/deliverables`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          creatorId,
-          platform: manualPlatform,
-          permalink: manualUrl.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setAddingStatus(null);
-        setAddingLink(null);
-        setManualUrl("");
-        onScanComplete();
-      } else {
-        setAddingStatus(data.error || "Error");
-      }
-    } catch {
-      setAddingStatus("Error");
-    }
-  }, [campaignId, manualUrl, manualPlatform, onScanComplete]);
 
   // Group deliverables by creator
   const byCreator = new Map<string, CampaignDeliverable[]>();

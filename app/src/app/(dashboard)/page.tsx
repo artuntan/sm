@@ -462,11 +462,11 @@ export default function Home() {
                 const ig = rr.row.instagramUsername;
                 const tt = rr.row.tiktokUsername;
                 if (ig && tt) {
-                  fetch("/api/warehouse/link", {
+                  await fetch("/api/warehouse/link", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ instagramUsername: ig, tiktokUsername: tt }),
-                  }).catch(() => {}); // fire-and-forget
+                  });
                 }
               }
             } catch {}
