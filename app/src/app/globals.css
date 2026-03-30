@@ -74,6 +74,9 @@
 
   /* Dot-grid */
   --dot-grid-opacity: 1;
+
+  /* Brand — type of */
+  --typeof-brand: #b0b8c4;
 }
 
 /* ---------------------------------------------------------------------------
@@ -123,6 +126,9 @@
 
   /* Dot-grid — nearly invisible on light surfaces */
   --dot-grid-opacity: 0.35;
+
+  /* Brand — type of */
+  --typeof-brand: #505860;
 }
 
 /* System theme — mirrors light tokens when OS is light */
@@ -162,6 +168,9 @@
     --shadow-menu-sm: rgba(0, 0, 0, 0.06);
 
     --dot-grid-opacity: 0.35;
+
+    /* Brand — type of */
+    --typeof-brand: #505860;
   }
 }
 

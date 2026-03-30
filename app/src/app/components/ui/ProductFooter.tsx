@@ -3,7 +3,7 @@
 /**
  * ProductFooter — Global product chrome footer
  *
- * Slim instrument-bar footer that matches the Creator Benchmark design language:
+ * Slim instrument-bar footer that matches the type of design language:
  * matte-black surface, mono typography, restrained emerald accents.
  *
  * Two variants:
@@ -45,8 +45,8 @@ export function ProductFooter({
             width: "4px",
             height: "4px",
             borderRadius: "50%",
-            backgroundColor: "var(--accent-green)",
-            opacity: 0.4,
+            backgroundColor: "var(--typeof-brand)",
+            opacity: 0.5,
           }}
         />
         <span
@@ -58,7 +58,7 @@ export function ProductFooter({
             opacity: 0.5,
           }}
         >
-          CREATOR BENCHMARK © {year}
+          type of © {year}
         </span>
       </footer>
     );
@@ -103,7 +103,7 @@ export function ProductFooter({
               width: "4px",
               height: "4px",
               borderRadius: "50%",
-              backgroundColor: "var(--accent-green)",
+              backgroundColor: "var(--typeof-brand)",
               opacity: 0.6,
             }}
           />
@@ -116,7 +116,7 @@ export function ProductFooter({
               fontWeight: 500,
             }}
           >
-            CREATOR BENCHMARK
+            type of
           </span>
           <span
             style={{

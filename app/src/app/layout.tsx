@@ -14,7 +14,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Creator Benchmark — Cross-Platform Marketing Analysis",
+  title: "type of — Cross-Platform Marketing Analysis",
   description:
     "Analyze Instagram and TikTok creator performance simultaneously. Follower counts, organic benchmarks, commercial detection — one coordinated lookup.",
 };

@@ -15,6 +15,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Modal } from "@/app/components/ui/Modal";
 import { ProductFooter } from "@/app/components/ui/ProductFooter";
+import { TypeOfMark } from "@/app/components/ui/TypeOfBrand";
 import type { ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
@@ -280,12 +281,12 @@ export function AppShell({
           {/* Left: Logo + Scrollable Tabs */}
           <div className="flex items-center gap-0.5 min-w-0 flex-1">
             <Link href="/" className="flex items-center gap-2 mr-2 shrink-0">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--accent-green)" }} />
+              <TypeOfMark size={18} />
               <span
                 className="text-[11px] font-semibold tracking-wider hidden md:inline"
-                style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
+                style={{ color: "var(--typeof-brand)", fontFamily: "var(--font-mono)" }}
               >
-                CREATOR BENCHMARK
+                type of
               </span>
             </Link>
 

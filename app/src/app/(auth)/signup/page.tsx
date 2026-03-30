@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { signUp } from "@/lib/auth/client";
 import { useRouter } from "next/navigation";
+import { TypeOfMark } from "@/app/components/ui/TypeOfBrand";
 
 function BlurredProductSkeleton() {
   return (
@@ -14,8 +15,8 @@ function BlurredProductSkeleton() {
       <div style={{ backgroundColor: "var(--bg-primary)", minHeight: "100vh" }}>
         <div className="border-b" style={{ borderColor: "var(--border-subtle)", padding: "10px 20px" }}>
           <div className="flex items-center gap-2 max-w-[1200px] mx-auto">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--accent-green)" }} />
-            <div className="h-2.5 rounded" style={{ width: "120px", backgroundColor: "var(--bg-elevated)" }} />
+            <div className="h-3 rounded" style={{ width: "24px", backgroundColor: "var(--bg-elevated)" }} />
+            <div className="h-2.5 rounded" style={{ width: "60px", backgroundColor: "var(--bg-elevated)" }} />
           </div>
         </div>
         <div className="max-w-[1200px] mx-auto px-4 py-6">
@@ -69,12 +70,12 @@ export default function SignupPage() {
         }}
       >
         <div className="flex items-center gap-2 mb-5">
-          <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "var(--accent-green)" }} />
+          <TypeOfMark size={16} />
           <span
             className="text-[10px] font-semibold tracking-wider"
-            style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}
+            style={{ color: "var(--typeof-brand)", fontFamily: "var(--font-mono)" }}
           >
-            CREATOR BENCHMARK
+            type of
           </span>
         </div>
 
