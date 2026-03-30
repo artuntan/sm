@@ -178,18 +178,18 @@
    Brand logo theme switching
    --------------------------------------------------------------------------- */
 
-/* Default (dark mode): show white logo, hide gray one */
-.typeof-logo-dark { display: block !important; }
-.typeof-logo-light { display: none !important; }
+/* Default (dark mode): show gray logo, hide white one */
+.typeof-logo-dark { display: none !important; }
+.typeof-logo-light { display: block !important; }
 
-/* Light mode: show gray logo, hide white one */
-[data-theme="light"] .typeof-logo-dark { display: none !important; }
-[data-theme="light"] .typeof-logo-light { display: block !important; }
+/* Light mode: show white logo, hide gray one */
+[data-theme="light"] .typeof-logo-dark { display: block !important; }
+[data-theme="light"] .typeof-logo-light { display: none !important; }
 
 /* System theme — light OS */
 @media (prefers-color-scheme: light) {
-  [data-theme="system"] .typeof-logo-dark { display: none !important; }
-  [data-theme="system"] .typeof-logo-light { display: block !important; }
+  [data-theme="system"] .typeof-logo-dark { display: block !important; }
+  [data-theme="system"] .typeof-logo-light { display: none !important; }
 }
 
 /* ---------------------------------------------------------------------------
