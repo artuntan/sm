@@ -7,30 +7,18 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { campaign } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { canTransitionTo } from "@/lib/domain/campaign-types";
 import type { CampaignStatus } from "@/lib/domain/campaign-types";
+import { requireTeamMemberOrSystemAdmin } from "@/lib/auth/guards";
 
 // ---------------------------------------------------------------------------
-// Auth helper (follows existing pattern from /api/history)
+// Team ID helper
 // ---------------------------------------------------------------------------
-
-async function getSessionOrFail() {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
-  if (!session?.user?.id) {
-    return null;
-  }
-  return session;
-}
 
 async function getTeamId(userId: string): Promise<string | null> {
-  // Re-use the team membership lookup pattern from history route
   const { teamMembership } = await import("@/lib/db/schema");
   const membership = await db
     .select({ teamId: teamMembership.teamId })
@@ -65,18 +53,14 @@ const CreateCampaignSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
-  const session = await getSessionOrFail();
-  if (!session) {
-    return NextResponse.json(
-      { error: "Authentication required" },
-      { status: 401 }
-    );
-  }
+  const result = await requireTeamMemberOrSystemAdmin();
+  if (result instanceof NextResponse) return result;
+  const { user, team } = result;
 
-  const teamId = await getTeamId(session.user.id);
+  const teamId = team?.teamId || (await getTeamId(user.id));
   if (!teamId) {
     return NextResponse.json(
-      { error: "No team membership found" },
+      { error: { code: "FORBIDDEN", message: "No team membership found" } },
       { status: 403 }
     );
   }
@@ -118,7 +102,7 @@ export async function POST(request: NextRequest) {
       tags: tags ?? [],
       createdAt: now,
       updatedAt: now,
-      createdBy: session.user.id,
+      createdBy: user.id,
     });
 
     const created = await db
@@ -155,18 +139,14 @@ const ListCampaignsSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const session = await getSessionOrFail();
-  if (!session) {
-    return NextResponse.json(
-      { error: "Authentication required" },
-      { status: 401 }
-    );
-  }
+  const result = await requireTeamMemberOrSystemAdmin();
+  if (result instanceof NextResponse) return result;
+  const { user, team } = result;
 
-  const teamId = await getTeamId(session.user.id);
+  const teamId = team?.teamId || (await getTeamId(user.id));
   if (!teamId) {
     return NextResponse.json(
-      { error: "No team membership found" },
+      { error: { code: "FORBIDDEN", message: "No team membership found" } },
       { status: 403 }
     );
   }

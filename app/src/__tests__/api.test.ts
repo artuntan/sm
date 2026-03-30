@@ -2,6 +2,15 @@
  * Tests for POST /api/analyze route — dual benchmark response.
  */
 
+jest.mock("@/lib/auth/guards", () => ({
+  requireApproved: jest.fn().mockResolvedValue({ id: "test-user", name: "Test", email: "test@test.com", systemRole: "user", approvalStatus: "approved" }),
+}));
+
+jest.mock("@/lib/rate-limit", () => ({
+  checkRateLimit: jest.fn().mockResolvedValue(null),
+  expensiveApiLimiter: {},
+}));
+
 jest.mock("@/lib/providers/factory", () => ({
   getProvider: jest.fn(),
 }));

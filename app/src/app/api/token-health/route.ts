@@ -11,6 +11,7 @@
  * - Check required scopes are present
  * - Diagnose authentication failures
  */
+import { requireSystemAdmin } from "@/lib/auth/guards";
 import { NextResponse } from "next/server";
 import { checkTokenHealth } from "@/lib/providers/token-health";
 import type { TokenHealthStatus } from "@/lib/providers/token-health";
@@ -21,6 +22,9 @@ type HealthResponse = TokenHealthStatus & {
 };
 
 export async function GET(): Promise<NextResponse<HealthResponse>> {
+  const user = await requireSystemAdmin();
+  if (user instanceof NextResponse) return user as NextResponse<HealthResponse>;
+
   const health = await checkTokenHealth();
 
   const recommendations: string[] = [];

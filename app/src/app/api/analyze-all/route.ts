@@ -8,6 +8,8 @@
  * Partial failures: one platform failing does not destroy the other's result.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { requireApproved } from "@/lib/auth/guards";
+import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
 import { z } from "zod";
 import { normalizeUsername } from "@/lib/domain/normalize";
 import { selectDualBenchmark, selectDualBenchmarkFromItems } from "@/lib/domain/selection";
@@ -225,6 +227,14 @@ async function analyzePlatform(
 }
 
 export async function POST(request: NextRequest) {
+  // Auth guard
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
+  // Rate limit
+  const limited = await checkRateLimit(expensiveApiLimiter, "analyze-all");
+  if (limited) return limited;
+
   let body: unknown;
   try {
     body = await request.json();

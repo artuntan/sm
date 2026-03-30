@@ -4,10 +4,14 @@
  * GET /api/dimes/brands — list all brands with their accounts
  */
 
+import { requireApproved } from "@/lib/auth/guards";
 import { NextResponse } from "next/server";
 import { getAllBrands, PLATFORM_ACCESS } from "@/lib/dimes/accounts";
 
 export async function GET() {
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
   try {
     const brands = getAllBrands();
 

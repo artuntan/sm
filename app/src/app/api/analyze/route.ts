@@ -8,6 +8,8 @@
  * Backward compatible: if platform is omitted, defaults to "instagram".
  */
 import { NextRequest, NextResponse } from "next/server";
+import { requireApproved } from "@/lib/auth/guards";
+import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
 import { z } from "zod";
 import { normalizeUsername } from "@/lib/domain/normalize";
 import { selectDualBenchmark, selectDualBenchmarkFromItems } from "@/lib/domain/selection";
@@ -56,6 +58,14 @@ function validateUsername(
 }
 
 export async function POST(request: NextRequest) {
+  // Auth guard
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
+  // Rate limit
+  const limited = await checkRateLimit(expensiveApiLimiter, "analyze");
+  if (limited) return limited;
+
   // Parse and validate request body
   let body: unknown;
   try {

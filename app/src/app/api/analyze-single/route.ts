@@ -9,6 +9,8 @@
  * Shares the analyzePlatform() logic with /api/analyze-all.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { requireApproved } from "@/lib/auth/guards";
+import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
 import { ensureIdentity } from "@/lib/services/identity-service";
 import { z } from "zod";
 import { normalizeUsername } from "@/lib/domain/normalize";
@@ -203,6 +205,14 @@ async function analyzePlatform(
 }
 
 export async function POST(request: NextRequest) {
+  // Auth guard
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
+  // Rate limit
+  const limited = await checkRateLimit(expensiveApiLimiter, "analyze-single");
+  if (limited) return limited;
+
   let body: unknown;
   try {
     body = await request.json();

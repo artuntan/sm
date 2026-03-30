@@ -13,6 +13,7 @@
  *   ?since=2025-01-01  — filter posts after this date
  */
 
+import { requireApproved } from "@/lib/auth/guards";
 import { NextResponse } from "next/server";
 import { getAllBrands, getBrandBySlug } from "@/lib/dimes/accounts";
 import * as repo from "@/lib/dimes/repository";
@@ -21,6 +22,9 @@ import { analyzeGaps, computeGapSummary } from "@/lib/dimes/gap-analysis";
 import { clusterMediaFormat } from "@/lib/dimes/media-format";
 
 export async function GET(request: Request) {
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
   try {
     const url = new URL(request.url);
     const brandSlug = url.searchParams.get("brand");

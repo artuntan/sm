@@ -6,6 +6,7 @@
  *
  * Body: { instagramUsername?: string, tiktokUsername?: string }
  */
+import { requireApproved } from "@/lib/auth/guards";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ensureIdentity } from "@/lib/services/identity-service";
@@ -16,6 +17,9 @@ const LinkSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
   let body: unknown;
   try {
     body = await request.json();

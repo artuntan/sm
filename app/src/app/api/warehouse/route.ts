@@ -5,7 +5,8 @@
  * Groups IG + TT accounts into single identity rows.
  * Computes organic / commercial benchmark summaries from cached scan data.
  */
-import { NextResponse } from "next/server";
+import { requireApproved } from "@/lib/auth/guards";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   creatorScanCache,
@@ -205,7 +206,15 @@ function bestFreshness(
 // GET handler
 // ---------------------------------------------------------------------------
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
+  // Parse pagination
+  const url = new URL(request.url);
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "50"), 100);
+  const offset = parseInt(url.searchParams.get("offset") || "0");
+
   try {
     const identities: WarehouseIdentity[] = [];
     const seenUsernames = new Set<string>();
@@ -281,9 +290,12 @@ export async function GET() {
         new Date(b.lastScanAt).getTime() - new Date(a.lastScanAt).getTime()
     );
 
+    const totalCount = identities.length;
+    const paginated = identities.slice(offset, offset + limit);
+
     return NextResponse.json({
-      identities,
-      totalCount: identities.length,
+      identities: paginated,
+      totalCount,
       freshCount: identities.filter((i) => i.freshness === "fresh").length,
       staleCount: identities.filter((i) => i.freshness === "stale").length,
       expiredCount: identities.filter((i) => i.freshness === "expired").length,

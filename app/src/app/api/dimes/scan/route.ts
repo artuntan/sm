@@ -20,6 +20,8 @@
  * Only accounts whose fetch succeeds advance their scan cursor.
  */
 
+import { requireApproved } from "@/lib/auth/guards";
+import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import {
   executeScanRun,
@@ -35,6 +37,12 @@ import type { DimesSocialAccount, ScanType, ScanError } from "@/lib/dimes/types"
 const FAST_SCAN_OVERLAP_HOURS = 6;
 
 export async function POST(request: Request) {
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
+  const limited = await checkRateLimit(expensiveApiLimiter, "dimes-scan");
+  if (limited) return limited;
+
   try {
     const url = new URL(request.url);
     const autoScan = url.searchParams.get("auto") !== "false"; // default true
@@ -253,6 +261,9 @@ export async function POST(request: Request) {
  * and per-account scan states for UI preview.
  */
 export async function GET() {
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
   try {
     const config = getDailyScanConfig();
     const history = await repo.getScanHistory();

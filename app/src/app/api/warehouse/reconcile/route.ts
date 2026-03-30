@@ -5,10 +5,14 @@
  * Creates missing identity rows and merges split identities.
  * Safe to call multiple times — idempotent.
  */
+import { requireApproved } from "@/lib/auth/guards";
 import { NextResponse } from "next/server";
 import { reconcileIdentities } from "@/lib/services/identity-service";
 
 export async function GET() {
+  const user = await requireApproved();
+  if (user instanceof NextResponse) return user;
+
   try {
     const result = await reconcileIdentities();
     return NextResponse.json({
