@@ -196,22 +196,23 @@ export default function HistoryPage() {
     } catch {}
   }, [fetchRuns]);
 
-  // CSV Export
-  const handleExport = useCallback(async () => {
+  // Export (CSV or XLSX)
+  const handleExport = useCallback(async (format: "csv" | "xlsx" = "csv") => {
     const ids = bulkMode && selectedIds.size > 0
       ? Array.from(selectedIds)
       : runs.map(r => r.id);
     if (ids.length === 0) return;
-    const url = `/api/history/export?runIds=${ids.join(",")}`;
+    const url = `/api/history/export?runIds=${ids.join(",")}&format=${format}`;
     const res = await fetch(url);
     if (!res.ok) return;
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `analysis-export-${Date.now()}.csv`;
+    a.download = `analysis-export-${Date.now()}.${format}`;
     a.click();
     URL.revokeObjectURL(a.href);
   }, [runs, bulkMode, selectedIds]);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   // Selection helpers
   const toggleSelect = (id: string) => {
@@ -370,16 +371,39 @@ export default function HistoryPage() {
             </button>
           )}
 
-          {/* Export */}
+          {/* Export dropdown */}
           {runs.length > 0 && (
-            <button
-              data-no-press
-              onClick={handleExport}
-              className="text-[10px] px-2.5 py-1 rounded transition-colors hover:opacity-80"
-              style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
-            >
-              ↓ EXPORT CSV
-            </button>
+            <div className="relative">
+              <button
+                data-no-press
+                onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                className="text-[10px] px-2.5 py-1 rounded transition-colors hover:opacity-80"
+                style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}
+              >
+                ↓ EXPORT
+              </button>
+              {exportMenuOpen && (
+                <div
+                  className="absolute right-0 top-full mt-1 rounded border z-50"
+                  style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border-default)", minWidth: 120 }}
+                >
+                  <button
+                    onClick={() => { handleExport("csv"); setExportMenuOpen(false); }}
+                    className="block w-full text-left text-[10px] px-3 py-1.5 transition-colors hover:opacity-80"
+                    style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}
+                  >
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => { handleExport("xlsx"); setExportMenuOpen(false); }}
+                    className="block w-full text-left text-[10px] px-3 py-1.5 transition-colors hover:opacity-80"
+                    style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}
+                  >
+                    XLSX
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -416,13 +440,36 @@ export default function HistoryPage() {
                     UNARCHIVE
                   </button>
                 )}
-                <button
-                  onClick={handleExport}
-                  className="text-[9px] px-2 py-1 rounded transition-all hover:opacity-80"
-                  style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", backgroundColor: "var(--bg-elevated)" }}
-                >
-                  ↓ EXPORT
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                    className="text-[9px] px-2 py-1 rounded transition-all hover:opacity-80"
+                    style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", backgroundColor: "var(--bg-elevated)" }}
+                  >
+                    ↓ EXPORT
+                  </button>
+                  {exportMenuOpen && (
+                    <div
+                      className="absolute right-0 top-full mt-1 rounded border z-50"
+                      style={{ backgroundColor: "var(--bg-card)", borderColor: "var(--border-default)", minWidth: 100 }}
+                    >
+                      <button
+                        onClick={() => { handleExport("csv"); setExportMenuOpen(false); }}
+                        className="block w-full text-left text-[9px] px-3 py-1.5 transition-colors hover:opacity-80"
+                        style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}
+                      >
+                        CSV
+                      </button>
+                      <button
+                        onClick={() => { handleExport("xlsx"); setExportMenuOpen(false); }}
+                        className="block w-full text-left text-[9px] px-3 py-1.5 transition-colors hover:opacity-80"
+                        style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}
+                      >
+                        XLSX
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={() => setDeleteConfirm(Array.from(selectedIds))}
                   className="text-[9px] px-2 py-1 rounded transition-all hover:opacity-80"

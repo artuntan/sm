@@ -1,16 +1,13 @@
 /**
- * History — CSV Export API
+ * History — Export API (CSV / XLSX)
  *
- * GET — export run data as CSV
+ * GET — export run data
  *
  * Query params:
  *   ?runIds=  — comma-separated run IDs to export (required)
+ *   ?format=  — "csv" (default) or "xlsx"
  *
- * Each row in the CSV = one creator per platform in one run.
- * Columns: run_id, run_date, run_status, run_note, run_tags,
- *          creator, platform, followers, organic_avg_views, commercial_avg_views,
- *          ad_to_organic_ratio, content_count, organic_sample, commercial_sample, status
- *
+ * Each row = one creator per platform in one run.
  * Requires team membership or system admin.
  */
 
@@ -44,6 +41,13 @@ type PlatformData = {
   status: string;
 };
 
+const HEADERS = [
+  "run_id", "run_date", "run_status", "run_note", "run_tags",
+  "creator", "platform", "followers",
+  "organic_avg_views", "commercial_avg_views", "ad_to_organic_ratio",
+  "total_content", "organic_sample", "commercial_sample", "creator_status",
+];
+
 function escapeCSV(val: string | null | undefined): string {
   if (val == null) return "";
   const s = String(val);
@@ -53,6 +57,53 @@ function escapeCSV(val: string | null | undefined): string {
   return s;
 }
 
+function buildExportRows(runs: Array<{
+  id: string;
+  status: string;
+  note: string | null;
+  tags: unknown;
+  startedAt: Date | null;
+  resultSnapshot: unknown;
+}>): string[][] {
+  const rows: string[][] = [];
+
+  for (const run of runs) {
+    const snapshot: SnapshotRow[] = (run.resultSnapshot as SnapshotRow[]) || [];
+    const runDate = run.startedAt ? new Date(run.startedAt as unknown as number * 1000).toISOString().split("T")[0] : "";
+    const tags: string[] = (run.tags as string[]) || [];
+
+    for (const entry of snapshot) {
+      const platforms: [string, PlatformData | null][] = [
+        ["instagram", entry.instagram],
+        ["tiktok", entry.tiktok],
+      ];
+
+      for (const [platformName, pd] of platforms) {
+        if (!pd) continue;
+        rows.push([
+          run.id,
+          runDate,
+          run.status,
+          run.note || "",
+          tags.join("; "),
+          pd.username || entry.row?.label || "",
+          platformName,
+          String(pd.profile?.followerCount ?? ""),
+          String(pd.organic?.averageViews ?? ""),
+          String(pd.commercial?.averageViews ?? ""),
+          String(pd.comparison?.adToOrganicRatio ?? ""),
+          String(pd.totalContentCount ?? ""),
+          String(pd.organic?.sampleSize ?? ""),
+          String(pd.commercial?.sampleSize ?? ""),
+          pd.status,
+        ]);
+      }
+    }
+  }
+
+  return rows;
+}
+
 export async function GET(request: NextRequest) {
   const result = await requireTeamMemberOrSystemAdmin();
   if (result instanceof NextResponse) return result;
@@ -60,10 +111,18 @@ export async function GET(request: NextRequest) {
   const { team } = result;
   const params = request.nextUrl.searchParams;
   const runIdsParam = params.get("runIds");
+  const format = params.get("format") || "csv";
 
   if (!runIdsParam) {
     return NextResponse.json(
       { error: { code: "BAD_REQUEST", message: "runIds param required." } },
+      { status: 400 }
+    );
+  }
+
+  if (format !== "csv" && format !== "xlsx") {
+    return NextResponse.json(
+      { error: { code: "BAD_REQUEST", message: "format must be csv or xlsx." } },
       { status: 400 }
     );
   }
@@ -76,7 +135,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Fetch runs (team-scoped)
   const conditions = [inArray(analysisRun.id, runIds)];
   if (team) conditions.push(eq(analysisRun.teamId, team.teamId));
 
@@ -92,56 +150,37 @@ export async function GET(request: NextRequest) {
     .from(analysisRun)
     .where(and(...conditions));
 
-  // Build CSV
-  const headers = [
-    "run_id", "run_date", "run_status", "run_note", "run_tags",
-    "creator", "platform", "followers",
-    "organic_avg_views", "commercial_avg_views", "ad_to_organic_ratio",
-    "total_content", "organic_sample", "commercial_sample", "creator_status",
-  ];
+  const dataRows = buildExportRows(runs);
 
-  const rows: string[] = [headers.join(",")];
+  if (format === "xlsx") {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...dataRows]);
 
-  for (const run of runs) {
-    const snapshot: SnapshotRow[] = (run.resultSnapshot as SnapshotRow[]) || [];
+    // Auto-size columns
+    ws["!cols"] = HEADERS.map((h, i) => ({
+      wch: Math.max(h.length, ...dataRows.map(r => (r[i] || "").length)).valueOf(),
+    }));
 
-    const runDate = run.startedAt ? new Date(run.startedAt as unknown as number * 1000).toISOString().split("T")[0] : "";
-    const tags: string[] = (run.tags as string[]) || [];
+    XLSX.utils.book_append_sheet(wb, ws, "Export");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
-    for (const entry of snapshot) {
-      // Output one row per platform per creator
-      const platforms: [string, PlatformData | null][] = [
-        ["instagram", entry.instagram],
-        ["tiktok", entry.tiktok],
-      ];
-
-      for (const [platformName, pd] of platforms) {
-        if (!pd) continue;
-
-        rows.push([
-          escapeCSV(run.id),
-          escapeCSV(runDate),
-          escapeCSV(run.status),
-          escapeCSV(run.note),
-          escapeCSV(tags.join("; ")),
-          escapeCSV(pd.username || entry.row?.label || ""),
-          escapeCSV(platformName),
-          String(pd.profile?.followerCount ?? ""),
-          String(pd.organic?.averageViews ?? ""),
-          String(pd.commercial?.averageViews ?? ""),
-          String(pd.comparison?.adToOrganicRatio ?? ""),
-          String(pd.totalContentCount ?? ""),
-          String(pd.organic?.sampleSize ?? ""),
-          String(pd.commercial?.sampleSize ?? ""),
-          escapeCSV(pd.status),
-        ].join(","));
-      }
-    }
+    return new NextResponse(buf, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="analysis-export-${Date.now()}.xlsx"`,
+      },
+    });
   }
 
-  const csv = rows.join("\n");
+  // CSV
+  const csvRows = [HEADERS.join(",")];
+  for (const row of dataRows) {
+    csvRows.push(row.map(escapeCSV).join(","));
+  }
 
-  return new NextResponse(csv, {
+  return new NextResponse(csvRows.join("\n"), {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
