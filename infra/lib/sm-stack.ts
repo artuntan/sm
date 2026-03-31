@@ -2,6 +2,9 @@ import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 
@@ -9,30 +12,32 @@ import { Construct } from "constructs";
  * SM Infrastructure Stack
  *
  * Uses EXISTING resources:
- * - VPC: AtbilStack/AtbilVpc (vpc-0f586a54bb4aed12d)
- * - RDS: atbil-db (shared Postgres — we create a "smdb" database on it)
+ * - VPC: AtbilStack/AtbilVpc (vpc-0f586a54bb4aed12d) in eu-central-1
+ * - RDS: atbil-db (shared Postgres — we create "smdb" database on it)
+ * - ACM cert: pre-created in us-east-1 (required by CloudFront)
  *
  * Creates:
- * - EC2 t4g.micro with Docker + Caddy (auto-HTTPS via Let's Encrypt)
+ * - EC2 t4g.micro with Docker (app server)
+ * - CloudFront distribution → EC2 (HTTPS + global edge caching)
  * - ECR for Docker images
  * - SSM Parameter Store for secrets (free)
  *
- * Domain: marketing.type-of.com → EC2 public IP (A record in Namecheap)
- * HTTPS: Caddy handles TLS automatically, no CloudFront needed
+ * Domain: marketing.type-of.com → CloudFront → EC2
  *
- * Cost (incremental — RDS already exists):
- *   EC2 t4g.micro:    $6.13/mo
- *   EBS 20GB gp3:     $1.60/mo
- *   ECR:              ~$0.10/mo
+ * Cost (incremental):
+ *   EC2 t4g.micro + EBS:  $7.73/mo
+ *   CloudFront:           $0 (free tier: 1TB/10M requests)
+ *   ECR:                  ~$0.10/mo
  *   ────────────────────────
- *   Total:            ~$7.83/mo
- *
- * Everything stays in eu-central-1.
+ *   Total:                ~$7.83/mo
  */
 
 interface SmStackProps extends cdk.StackProps {
   stage: string;
 }
+
+// Pre-created ACM certificate (us-east-1, covers *.type-of.com + type-of.com)
+const CERT_ARN = "arn:aws:acm:us-east-1:334856751876:certificate/2b336fa5-c54c-4fff-a9a4-c066e6df00f8";
 
 export class SmStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: SmStackProps & cdk.StackProps) {
@@ -58,11 +63,11 @@ export class SmStack extends cdk.Stack {
       description: "SM app server",
       allowAllOutbound: true,
     });
-    appSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), "HTTP");
-    appSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS");
+    // Only need port 80 — CloudFront terminates HTTPS
+    appSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), "HTTP from CloudFront");
 
     // Allow app server to reach the existing RDS
-    existingDbSg.addIngressRule(appSg, ec2.Port.tcp(5432), "SM app → shared Postgres");
+    existingDbSg.addIngressRule(appSg, ec2.Port.tcp(5432), "SM app to shared Postgres");
 
     // ── SSM Parameter Store (free) ───────────────────────────
     const paramPrefix = `/sm/${stage}`;
@@ -70,7 +75,7 @@ export class SmStack extends cdk.Stack {
     const params: Record<string, { value: string; desc: string }> = {
       DATABASE_URL: {
         value: "CHANGE_AFTER_DEPLOY",
-        desc: "postgresql://user:pass@atbil-db.cx4qim2qmdt8.eu-central-1.rds.amazonaws.com:5432/smdb",
+        desc: "postgresql://user:pass@atbil-db...rds.amazonaws.com:5432/smdb",
       },
       BETTER_AUTH_SECRET: {
         value: "CHANGE_AFTER_DEPLOY",
@@ -118,48 +123,11 @@ export class SmStack extends cdk.Stack {
 
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
-      // System updates + Docker
       "yum update -y",
       "yum install -y docker jq",
       "systemctl enable docker && systemctl start docker",
       "usermod -aG docker ec2-user",
-
-      // Install Caddy (reverse proxy with auto-HTTPS)
-      "yum install -y yum-utils",
-      "yum-config-manager --add-repo https://copr.fedorainfracloud.org/coprs/g/caddy/caddy/repo/epel-9/group_caddy-caddy-epel-9.repo || true",
-      // Fallback: direct binary install
-      "curl -fsSL 'https://caddyserver.com/api/download?os=linux&arch=arm64' -o /usr/bin/caddy && chmod +x /usr/bin/caddy",
-
-      // Create Caddyfile for auto-HTTPS reverse proxy
-      `cat > /etc/caddy/Caddyfile << 'CADDYEOF'
-${appDomain} {
-  reverse_proxy localhost:3000
-}
-CADDYEOF`,
-      "mkdir -p /etc/caddy",
-      `echo '${appDomain} { reverse_proxy localhost:3000 }' > /etc/caddy/Caddyfile`,
-
-      // Caddy systemd service
-      `cat > /etc/systemd/system/caddy.service << 'SVCEOF'
-[Unit]
-Description=Caddy web server
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile
-ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile
-Restart=on-failure
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF`,
-      "systemctl daemon-reload",
-      "systemctl enable caddy",
-
-      // ECR login
       `aws ecr get-login-password --region ${cdk.Aws.REGION} | docker login --username AWS --password-stdin ${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com`,
-
       "echo 'EC2 ready for SM deployment' > /home/ec2-user/ready.txt"
     );
 
@@ -179,10 +147,54 @@ SVCEOF`,
       }],
     });
 
+    // ── CloudFront ───────────────────────────────────────────
+    // Import pre-created ACM certificate from us-east-1
+    const certificate = acm.Certificate.fromCertificateArn(
+      this, "AppCert", CERT_ARN
+    );
+
+    const distribution = new cloudfront.Distribution(this, "AppCdn", {
+      defaultBehavior: {
+        origin: new origins.HttpOrigin(instance.instancePublicDnsName, {
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          httpPort: 80,
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        // Cache static assets, bypass cache for API/auth
+        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
+      },
+      // API routes and auth — no caching
+      additionalBehaviors: {
+        "/api/*": {
+          origin: new origins.HttpOrigin(instance.instancePublicDnsName, {
+            protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          }),
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
+        },
+      },
+      domainNames: [appDomain],
+      certificate,
+      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
+    });
+
     // ── Outputs ──────────────────────────────────────────────
+    new cdk.CfnOutput(this, "CloudFrontDomain", {
+      value: distribution.distributionDomainName,
+      description: "CNAME marketing.type-of.com → this value",
+    });
+
+    new cdk.CfnOutput(this, "CloudFrontId", {
+      value: distribution.distributionId,
+    });
+
     new cdk.CfnOutput(this, "AppServerIp", {
       value: instance.instancePublicIp,
-      description: "Point A record: marketing.type-of.com → this IP",
+      description: "EC2 direct IP (for debugging)",
     });
 
     new cdk.CfnOutput(this, "EcrRepoUri", {
@@ -191,11 +203,7 @@ SVCEOF`,
 
     new cdk.CfnOutput(this, "SsmParamPrefix", {
       value: paramPrefix,
-      description: "SSM parameter prefix — update secrets via: aws ssm put-parameter --name /sm/prod/KEY --value VALUE --overwrite",
-    });
-
-    new cdk.CfnOutput(this, "DnsInstructions", {
-      value: `Add A record in Namecheap: marketing.type-of.com → ${instance.instancePublicIp}`,
+      description: "Update secrets: aws ssm put-parameter --name /sm/prod/KEY --value VALUE --overwrite",
     });
   }
 }

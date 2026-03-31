@@ -22,6 +22,9 @@ function getPool(): Pool {
     _pool = new Pool({
       connectionString: url,
       max: process.env.AWS_LAMBDA_FUNCTION_NAME ? 1 : 10,
+      ssl: url.includes("rds.amazonaws.com")
+        ? { rejectUnauthorized: false }
+        : undefined,
     });
   }
   return _pool;
