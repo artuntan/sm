@@ -153,8 +153,8 @@ export function AppShell({
 
   const setLocale = useCallback((locale: Locale) => {
     document.cookie = `locale=${locale};path=/;max-age=${365 * 24 * 60 * 60}`;
-    router.refresh();
-  }, [router]);
+    window.location.reload();
+  }, []);
 
   // ── Fetch identity — stale-while-revalidate ──────────────────────────────
   useEffect(() => {
