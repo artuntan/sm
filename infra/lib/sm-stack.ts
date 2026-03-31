@@ -153,28 +153,38 @@ export class SmStack extends cdk.Stack {
       this, "AppCert", CERT_ARN
     );
 
+    const ec2Origin = new origins.HttpOrigin(instance.instancePublicDnsName, {
+      protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+      httpPort: 80,
+    });
+
     const distribution = new cloudfront.Distribution(this, "AppCdn", {
+      // Default: NO caching — Next.js handles its own cache headers
+      // This prevents RSC payload caching that breaks client navigation
       defaultBehavior: {
-        origin: new origins.HttpOrigin(instance.instancePublicDnsName, {
-          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-          httpPort: 80,
-        }),
+        origin: ec2Origin,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-        // Cache static assets, bypass cache for API/auth
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
         originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
       },
-      // API routes and auth — no caching
       additionalBehaviors: {
-        "/api/*": {
-          origin: new origins.HttpOrigin(instance.instancePublicDnsName, {
-            protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-          }),
+        // Static assets — cache aggressively (immutable hashed files)
+        "_next/static/*": {
+          origin: ec2Origin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        },
+        // Public assets — cache with short TTL
+        "*.svg": {
+          origin: ec2Origin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        },
+        "*.ico": {
+          origin: ec2Origin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         },
       },
       domainNames: [appDomain],
