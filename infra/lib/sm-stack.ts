@@ -1,34 +1,33 @@
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as rds from "aws-cdk-lib/aws-rds";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 
 /**
  * SM Infrastructure Stack
  *
- * Architecture (optimized for cost — ~$22/month):
+ * Uses EXISTING resources:
+ * - VPC: AtbilStack/AtbilVpc (vpc-0f586a54bb4aed12d)
+ * - RDS: atbil-db (shared Postgres — we create a "smdb" database on it)
  *
- *   [CloudFront] → [EC2 t4g.micro + Docker] → [RDS Postgres t4g.micro]
- *       $0              $7.73/mo                    $14.71/mo
- *
- * - EC2 in public subnet (no ALB needed — saves $16/mo)
- * - RDS in private subnet (no public access)
- * - No NAT Gateway (saves $32/mo — EC2 is in public subnet)
+ * Creates:
+ * - EC2 t4g.micro with Docker + Caddy (auto-HTTPS via Let's Encrypt)
  * - ECR for Docker images
- * - Secrets Manager for credentials
+ * - SSM Parameter Store for secrets (free)
  *
- * Cost breakdown (eu-west-1):
- *   EC2 t4g.micro:    $6.13/mo (free tier eligible first 12 months)
+ * Domain: marketing.type-of.com → EC2 public IP (A record in Namecheap)
+ * HTTPS: Caddy handles TLS automatically, no CloudFront needed
+ *
+ * Cost (incremental — RDS already exists):
+ *   EC2 t4g.micro:    $6.13/mo
  *   EBS 20GB gp3:     $1.60/mo
- *   RDS t4g.micro:    $12.41/mo
- *   RDS 20GB gp3:     $2.30/mo
  *   ECR:              ~$0.10/mo
- *   Secrets Manager:  $0.80/mo (2 secrets × $0.40)
- *   ─────────────────────────
- *   Total:            $23.34/mo ($15.61 with EC2 free tier)
+ *   ────────────────────────
+ *   Total:            ~$7.83/mo
+ *
+ * Everything stays in eu-central-1.
  */
 
 interface SmStackProps extends cdk.StackProps {
@@ -41,27 +40,19 @@ export class SmStack extends cdk.Stack {
 
     const { stage } = props;
     const isProd = stage === "production";
+    const appDomain = "marketing.type-of.com";
 
-    // ── VPC ──────────────────────────────────────────────────
-    // 2 AZs, public + private subnets, NO NAT Gateway
-    const vpc = new ec2.Vpc(this, "Vpc", {
-      maxAzs: 2,
-      natGateways: 0, // Saves $32/mo
-      subnetConfiguration: [
-        {
-          name: "public",
-          subnetType: ec2.SubnetType.PUBLIC,
-          cidrMask: 24,
-        },
-        {
-          name: "private",
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-          cidrMask: 24,
-        },
-      ],
+    // ── Import existing VPC ──────────────────────────────────
+    const vpc = ec2.Vpc.fromLookup(this, "ExistingVpc", {
+      vpcId: "vpc-0f586a54bb4aed12d",
     });
 
-    // ── Security Groups ──────────────────────────────────────
+    // ── Import existing RDS security group ───────────────────
+    const existingDbSg = ec2.SecurityGroup.fromSecurityGroupId(
+      this, "ExistingDbSg", "sg-028be2258c9d06dd1"
+    );
+
+    // ── Security Group for App Server ────────────────────────
     const appSg = new ec2.SecurityGroup(this, "AppSg", {
       vpc,
       description: "SM app server",
@@ -69,155 +60,142 @@ export class SmStack extends cdk.Stack {
     });
     appSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), "HTTP");
     appSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), "HTTPS");
-    appSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(22), "SSH");
 
-    const dbSg = new ec2.SecurityGroup(this, "DbSg", {
-      vpc,
-      description: "SM database",
-      allowAllOutbound: false,
-    });
-    dbSg.addIngressRule(appSg, ec2.Port.tcp(5432), "Postgres from app");
+    // Allow app server to reach the existing RDS
+    existingDbSg.addIngressRule(appSg, ec2.Port.tcp(5432), "SM app → shared Postgres");
 
-    // ── Database ─────────────────────────────────────────────
-    const dbCredentials = new secretsmanager.Secret(this, "DbCredentials", {
-      secretName: `sm/${stage}/db-credentials`,
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({ username: "smadmin" }),
-        generateStringKey: "password",
-        excludePunctuation: true,
-        passwordLength: 32,
+    // ── SSM Parameter Store (free) ───────────────────────────
+    const paramPrefix = `/sm/${stage}`;
+
+    const params: Record<string, { value: string; desc: string }> = {
+      DATABASE_URL: {
+        value: "CHANGE_AFTER_DEPLOY",
+        desc: "postgresql://user:pass@atbil-db.cx4qim2qmdt8.eu-central-1.rds.amazonaws.com:5432/smdb",
       },
-    });
-
-    const database = new rds.DatabaseInstance(this, "Database", {
-      engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16,
-      }),
-      instanceType: ec2.InstanceType.of(
-        ec2.InstanceClass.T4G,
-        ec2.InstanceSize.MICRO
-      ),
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [dbSg],
-      credentials: rds.Credentials.fromSecret(dbCredentials),
-      databaseName: "smdb",
-      allocatedStorage: 20,
-      storageType: rds.StorageType.GP3,
-      multiAz: false, // Single AZ — saves ~$12/mo
-      backupRetention: cdk.Duration.days(isProd ? 7 : 1),
-      deletionProtection: isProd,
-      removalPolicy: isProd
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
-    });
-
-    // ── App Secrets ──────────────────────────────────────────
-    const appSecrets = new secretsmanager.Secret(this, "AppSecrets", {
-      secretName: `sm/${stage}/app-secrets`,
-      secretObjectValue: {
-        BETTER_AUTH_SECRET: cdk.SecretValue.unsafePlainText(
-          "CHANGE_ME_AFTER_DEPLOY_" + Math.random().toString(36).slice(2)
-        ),
-        META_ACCESS_TOKEN: cdk.SecretValue.unsafePlainText(""),
-        META_IG_USER_ID: cdk.SecretValue.unsafePlainText(""),
-        APIFY_API_TOKEN: cdk.SecretValue.unsafePlainText(""),
-        YOUTUBE_API_KEY: cdk.SecretValue.unsafePlainText(""),
-        BOOTSTRAP_ADMIN_EMAIL: cdk.SecretValue.unsafePlainText("admin@dimes.com"),
+      BETTER_AUTH_SECRET: {
+        value: "CHANGE_AFTER_DEPLOY",
+        desc: "Min 32 chars. Generate: openssl rand -base64 32",
       },
-    });
+      BETTER_AUTH_URL: {
+        value: `https://${appDomain}`,
+        desc: "Public URL of the app",
+      },
+      BOOTSTRAP_ADMIN_EMAIL: { value: "admin@dimes.com", desc: "First admin email" },
+      META_ACCESS_TOKEN: { value: "CHANGE_AFTER_DEPLOY", desc: "Meta Graph API token" },
+      META_IG_USER_ID: { value: "CHANGE_AFTER_DEPLOY", desc: "Instagram business account ID" },
+      APIFY_API_TOKEN: { value: "CHANGE_AFTER_DEPLOY", desc: "Apify API token" },
+      YOUTUBE_API_KEY: { value: "CHANGE_AFTER_DEPLOY", desc: "YouTube Data API key" },
+    };
+
+    for (const [key, { value, desc }] of Object.entries(params)) {
+      new ssm.StringParameter(this, `Param${key}`, {
+        parameterName: `${paramPrefix}/${key}`,
+        stringValue: value,
+        description: desc,
+      });
+    }
 
     // ── ECR Repository ───────────────────────────────────────
     const repo = new ecr.Repository(this, "AppRepo", {
       repositoryName: `sm-app-${stage}`,
-      removalPolicy: isProd
-        ? cdk.RemovalPolicy.RETAIN
-        : cdk.RemovalPolicy.DESTROY,
+      removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
       emptyOnDelete: !isProd,
-      lifecycleRules: [
-        {
-          maxImageCount: 5,
-          description: "Keep last 5 images",
-        },
-      ],
+      lifecycleRules: [{ maxImageCount: 5, description: "Keep last 5 images" }],
     });
 
     // ── EC2 Instance ─────────────────────────────────────────
     const role = new iam.Role(this, "AppRole", {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
       managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName(
-          "AmazonSSMManagedInstanceCore"
-        ),
+        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore"),
       ],
     });
     repo.grantPull(role);
-    dbCredentials.grantRead(role);
-    appSecrets.grantRead(role);
+    role.addToPolicy(new iam.PolicyStatement({
+      actions: ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"],
+      resources: [`arn:aws:ssm:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:parameter${paramPrefix}/*`],
+    }));
 
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
-      // Install Docker
+      // System updates + Docker
       "yum update -y",
       "yum install -y docker jq",
       "systemctl enable docker && systemctl start docker",
       "usermod -aG docker ec2-user",
 
-      // Install AWS CLI v2 (already on AL2023)
-      // Login to ECR
+      // Install Caddy (reverse proxy with auto-HTTPS)
+      "yum install -y yum-utils",
+      "yum-config-manager --add-repo https://copr.fedorainfracloud.org/coprs/g/caddy/caddy/repo/epel-9/group_caddy-caddy-epel-9.repo || true",
+      // Fallback: direct binary install
+      "curl -fsSL 'https://caddyserver.com/api/download?os=linux&arch=arm64' -o /usr/bin/caddy && chmod +x /usr/bin/caddy",
+
+      // Create Caddyfile for auto-HTTPS reverse proxy
+      `cat > /etc/caddy/Caddyfile << 'CADDYEOF'
+${appDomain} {
+  reverse_proxy localhost:3000
+}
+CADDYEOF`,
+      "mkdir -p /etc/caddy",
+      `echo '${appDomain} { reverse_proxy localhost:3000 }' > /etc/caddy/Caddyfile`,
+
+      // Caddy systemd service
+      `cat > /etc/systemd/system/caddy.service << 'SVCEOF'
+[Unit]
+Description=Caddy web server
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile
+Restart=on-failure
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF`,
+      "systemctl daemon-reload",
+      "systemctl enable caddy",
+
+      // ECR login
       `aws ecr get-login-password --region ${cdk.Aws.REGION} | docker login --username AWS --password-stdin ${cdk.Aws.ACCOUNT_ID}.dkr.ecr.${cdk.Aws.REGION}.amazonaws.com`,
 
-      // Pull and run the app (deploy script will handle actual image tag)
       "echo 'EC2 ready for SM deployment' > /home/ec2-user/ready.txt"
     );
 
     const instance = new ec2.Instance(this, "AppServer", {
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
-      instanceType: ec2.InstanceType.of(
-        ec2.InstanceClass.T4G,
-        ec2.InstanceSize.MICRO
-      ),
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T4G, ec2.InstanceSize.MICRO),
       machineImage: ec2.MachineImage.latestAmazonLinux2023({
         cpuType: ec2.AmazonLinuxCpuType.ARM_64,
       }),
       securityGroup: appSg,
       role,
       userData,
-      blockDevices: [
-        {
-          deviceName: "/dev/xvda",
-          volume: ec2.BlockDeviceVolume.ebs(20, {
-            volumeType: ec2.EbsDeviceVolumeType.GP3,
-          }),
-        },
-      ],
+      blockDevices: [{
+        deviceName: "/dev/xvda",
+        volume: ec2.BlockDeviceVolume.ebs(20, { volumeType: ec2.EbsDeviceVolumeType.GP3 }),
+      }],
     });
 
     // ── Outputs ──────────────────────────────────────────────
     new cdk.CfnOutput(this, "AppServerIp", {
       value: instance.instancePublicIp,
-      description: "EC2 public IP — point your domain here",
-    });
-
-    new cdk.CfnOutput(this, "DatabaseEndpoint", {
-      value: database.instanceEndpoint.hostname,
-      description: "RDS endpoint (private, accessible from EC2 only)",
+      description: "Point A record: marketing.type-of.com → this IP",
     });
 
     new cdk.CfnOutput(this, "EcrRepoUri", {
       value: repo.repositoryUri,
-      description: "ECR repository URI for docker push",
     });
 
-    new cdk.CfnOutput(this, "DbCredentialsArn", {
-      value: dbCredentials.secretArn,
-      description: "DB credentials in Secrets Manager",
+    new cdk.CfnOutput(this, "SsmParamPrefix", {
+      value: paramPrefix,
+      description: "SSM parameter prefix — update secrets via: aws ssm put-parameter --name /sm/prod/KEY --value VALUE --overwrite",
     });
 
-    new cdk.CfnOutput(this, "AppSecretsArn", {
-      value: appSecrets.secretArn,
-      description: "App secrets in Secrets Manager",
+    new cdk.CfnOutput(this, "DnsInstructions", {
+      value: `Add A record in Namecheap: marketing.type-of.com → ${instance.instancePublicIp}`,
     });
   }
 }

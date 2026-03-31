@@ -10,7 +10,7 @@ new SmStack(app, `Sm-${stage}`, {
   stage,
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION || "eu-west-1",
+    region: process.env.CDK_DEFAULT_REGION || "eu-central-1",
   },
   description: `SM Creator Intelligence Platform (${stage})`,
 });
