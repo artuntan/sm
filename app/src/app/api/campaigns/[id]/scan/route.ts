@@ -11,6 +11,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireTeamMemberOrSystemAdmin } from "@/lib/auth/guards";
 import { db } from "@/lib/db";
 import { campaign, coveragePost } from "@/lib/db/schema";
+import {
+  buildDistinctPlatformsAggregation,
+  parseAggregatedPlatforms,
+} from "@/lib/campaigns/coverage-gap-summary";
 import { eq, and, sql } from "drizzle-orm";
 
 export async function POST(
@@ -67,7 +71,7 @@ export async function POST(
         .select({
           clusterFingerprint: coveragePost.clusterFingerprint,
           platformCount: sql<number>`count(DISTINCT ${coveragePost.platform})`.as("platformCount"),
-          platforms: sql<string>`group_concat(DISTINCT ${coveragePost.platform})`.as("platforms"),
+          platforms: buildDistinctPlatformsAggregation(coveragePost.platform).as("platforms"),
         })
         .from(coveragePost)
         .where(and(...conditions))
@@ -83,7 +87,7 @@ export async function POST(
         gapCount: gapClusters.length,
         gaps: gapClusters.slice(0, 5).map((g) => ({
           fingerprint: g.clusterFingerprint,
-          presentPlatforms: g.platforms?.split(",") || [],
+          presentPlatforms: parseAggregatedPlatforms(g.platforms),
           platformCount: g.platformCount,
         })),
       };

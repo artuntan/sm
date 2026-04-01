@@ -6,12 +6,31 @@
  * Lazy initialization to avoid failing during Next.js build.
  */
 
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
 
 let _pool: Pool | null = null;
 let _db: NodePgDatabase<typeof schema> | null = null;
+
+export function getSslConfigForDatabaseUrl(
+  url: string,
+  caCert = process.env.DATABASE_CA_CERT
+): PoolConfig["ssl"] {
+  if (!url.includes("rds.amazonaws.com")) {
+    return undefined;
+  }
+
+  const normalizedCa = caCert?.replace(/\\n/g, "\n").trim();
+  if (normalizedCa) {
+    return {
+      rejectUnauthorized: true,
+      ca: normalizedCa,
+    };
+  }
+
+  return { rejectUnauthorized: true };
+}
 
 function getPool(): Pool {
   if (!_pool) {
@@ -22,9 +41,7 @@ function getPool(): Pool {
     _pool = new Pool({
       connectionString: url,
       max: process.env.AWS_LAMBDA_FUNCTION_NAME ? 1 : 10,
-      ssl: url.includes("rds.amazonaws.com")
-        ? { rejectUnauthorized: false }
-        : undefined,
+      ssl: getSslConfigForDatabaseUrl(url),
     });
   }
   return _pool;

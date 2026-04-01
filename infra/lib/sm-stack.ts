@@ -77,6 +77,10 @@ export class SmStack extends cdk.Stack {
         value: "CHANGE_AFTER_DEPLOY",
         desc: "postgresql://user:pass@atbil-db...rds.amazonaws.com:5432/smdb",
       },
+      DATABASE_CA_CERT: {
+        value: "CHANGE_AFTER_DEPLOY",
+        desc: "PEM CA certificate for RDS, stored as a single-line string with \\n escapes",
+      },
       BETTER_AUTH_SECRET: {
         value: "CHANGE_AFTER_DEPLOY",
         desc: "Min 32 chars. Generate: openssl rand -base64 32",

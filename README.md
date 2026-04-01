@@ -26,9 +26,9 @@ System administration — user approval workflow, team directory, role managemen
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | [Next.js 15](https://nextjs.org) (App Router) |
+| Framework | [Next.js 16](https://nextjs.org) (App Router) |
 | Auth | [Better Auth](https://www.better-auth.com) |
-| Database | SQLite via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) |
+| Database | PostgreSQL on AWS RDS |
 | ORM | [Drizzle ORM](https://orm.drizzle.team) |
 | Styling | Tailwind CSS v4 + custom design system |
 | Language | TypeScript (strict) |
@@ -106,6 +106,9 @@ Dark-first editorial aesthetic with light mode support:
 ## Environment Variables
 
 ```env
+# Database
+DATABASE_URL=postgresql://user:pass@host:5432/smdb
+
 # Auth
 BETTER_AUTH_SECRET=your_secret
 BETTER_AUTH_URL=http://localhost:3000
@@ -115,18 +118,15 @@ META_ACCESS_TOKEN=your_meta_page_access_token
 META_IG_USER_ID=your_instagram_business_account_id
 META_GRAPH_API_VERSION=v23.0
 
-# Instagram — Apify fallback
-APIFY_TOKEN=your_apify_token
+# PostgreSQL TLS
+# Recommended format: store the PEM as a single-line string with \n escapes.
+DATABASE_CA_CERT="-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
 
-# TikTok — Research API
-TIKTOK_CLIENT_KEY=your_tiktok_client_key
-TIKTOK_CLIENT_SECRET=your_tiktok_client_secret
+# Shared Apify token
+APIFY_API_TOKEN=your_apify_token
 
-# TikTok — Apify Live
-TIKTOK_APIFY_TOKEN=your_apify_token
-
-# Cache
-RESULT_CACHE_TTL_SECONDS=21600
+# Optional
+YOUTUBE_API_KEY=your_youtube_api_key
 ```
 
 ## Getting Started
@@ -160,12 +160,22 @@ npm test
 npm test -- --coverage
 ```
 
+## Current Production Runtime
+
+Today the production runtime is a single ARM EC2 instance behind CloudFront with a shared PostgreSQL instance on RDS. Deployment is still script-driven and uses SSM Parameter Store for secrets. See [docs/operations/current-runtime-baseline.md](docs/operations/current-runtime-baseline.md) for the exact current contract, known limitations, and the staged rebuild plan.
+
 ## Auth & Multi-Tenancy
 
 - **User Registration** → Admin approval required
 - **Team System** → Users join teams, team admins manage access
 - **System Admin** → Full system control, bypasses team gating
 - **Role Hierarchy**: `system_admin` → `team_admin` → `user`
+
+## Known Limitations
+
+- Production is currently single-instance and not horizontally scaled.
+- Heavy work is still being migrated out of the HTTP request lifecycle.
+- The architecture is in the middle of a staged rebuild toward durable jobs, stronger tenant isolation, and explicit billing controls.
 
 ## License
 
