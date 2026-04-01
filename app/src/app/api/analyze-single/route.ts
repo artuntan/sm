@@ -12,9 +12,8 @@ import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { requireApproved } from "@/lib/auth/guards";
 import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
-import { ensureIdentity } from "@/lib/services/identity-service";
 import { z } from "zod";
-import { analyzeCreator } from "@/lib/services/analyze-service";
+import { analyzeCreatorWithIdentity } from "@/lib/services/analyze-service";
 import {
   attachRequestId,
   getOrCreateRequestId,
@@ -74,24 +73,10 @@ export async function POST(request: NextRequest) {
   }
 
   const { platform, username, pairedWith, forceRefresh } = parseResult.data;
-  const result = await analyzeCreator(platform, username, { forceRefresh });
-
-  // ── Server-side identity linking ──
-  // When pair context is provided, create/update identity at write time
-  // This ensures identity rows exist before the warehouse reads them
-  try {
-    const ig = platform === "instagram" ? username.toLowerCase().trim() : (pairedWith?.toLowerCase().trim() || null);
-    const tt = platform === "tiktok" ? username.toLowerCase().trim() : (pairedWith?.toLowerCase().trim() || null);
-    // Always call ensureIdentity — even for single-platform (ig or tt alone)
-    ensureIdentity(ig, tt);
-  } catch (err) {
-    // Identity linking failure should not fail the analyze response
-    routeLogger.warn({ err }, "Identity linking failed after single analysis");
-    Sentry.captureException(err, {
-      tags: { route: "/api/analyze-single", stage: "identity-link" },
-      extra: { requestId },
-    });
-  }
+  const result = await analyzeCreatorWithIdentity(platform, username, {
+    forceRefresh,
+    pairedWith,
+  });
 
   // Logical analysis failures get HTTP 502 — the fetch succeeded but the
   // platform analysis itself failed (provider error, memory limit, etc.)

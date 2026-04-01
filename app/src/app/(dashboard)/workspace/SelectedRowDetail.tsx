@@ -102,7 +102,7 @@ export function SelectedRowDetail({
 }: {
   result: BatchRowResult;
   onClose: () => void;
-  onRetryHandle: (platform: Platform, username: string) => void;
+  onRetryHandle?: (platform: Platform, username: string) => void;
 }) {
   const ig = result.instagram;
   const tk = result.tiktok;
@@ -150,8 +150,9 @@ export function SelectedRowDetail({
                 <p className="text-xs" style={{ color: "var(--accent-pink)" }}>{w}</p>
               </div>
             ))}
-            <div className="flex gap-2 pt-1">
-              {hasIg && ig?.status === "error" && (
+            {onRetryHandle && (
+              <div className="flex gap-2 pt-1">
+                {hasIg && ig?.status === "error" && (
                 <button
                   onClick={() => onRetryHandle("instagram", result.row.instagramUsername!)}
                   className="text-[10px] px-2 py-1 rounded font-medium"
@@ -159,8 +160,8 @@ export function SelectedRowDetail({
                 >
                   RETRY IG
                 </button>
-              )}
-              {hasTk && tk?.status === "error" && (
+                )}
+                {hasTk && tk?.status === "error" && (
                 <button
                   onClick={() => onRetryHandle("tiktok", result.row.tiktokUsername!)}
                   className="text-[10px] px-2 py-1 rounded font-medium"
@@ -168,8 +169,9 @@ export function SelectedRowDetail({
                 >
                   RETRY TK
                 </button>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

@@ -19,8 +19,10 @@ This foundation currently covers:
 - the `outbox_event` table for future publisher wiring
 - a local queue adapter that can schedule work inside the app runtime
 - an operator-facing job status endpoint: `GET /api/jobs/:id`
+- a durable batch-analysis workflow via `POST /api/analyze-all`
+- a batch polling endpoint: `GET /api/batch-jobs/:id`
 
-It does **not** yet move batch analysis fully off the request lifecycle. That happens in Task 5.
+Batch analysis no longer depends on a single browser request staying alive.
 
 ## Runtime model
 
@@ -162,6 +164,61 @@ Response shape:
 - attempt history
 
 Team members do not get access to jobs owned by another team.
+
+### `POST /api/analyze-all`
+
+Batch mode now accepts:
+
+- `rows`
+- `forceRefresh`
+
+When `rows` is present, the route:
+
+- requires an approved team member or system admin with an active team
+- enqueues one durable `batch.analysis` job
+- returns `202 Accepted`
+- returns a `statusUrl` for polling
+
+The legacy cross-platform single-request mode still works when the payload is:
+
+- `instagram`
+- `tiktok`
+- `forceRefresh`
+
+### `GET /api/batch-jobs/:id`
+
+Returns the durable batch snapshot for the active team or a system admin.
+
+Response shape includes:
+
+- job metadata
+- `rows`
+- `handleJobs`
+- `rowResults`
+- `summary`
+- `historyRunId`
+- attempt history
+
+The route reconstructs an initial queued snapshot even if the job has been enqueued but has not yet written progress.
+
+## Dashboard behavior
+
+Task 5 switches the dashboard from browser-owned execution to server-owned execution.
+
+Current browser behavior:
+
+- parse input locally for validation only
+- submit rows to `POST /api/analyze-all`
+- persist `activeBatchJobId` in `localStorage`
+- poll `GET /api/batch-jobs/:id` every 2 seconds while the job is active
+- restore progress after refresh from the persisted job id
+- clear the local job pointer when the job reaches a terminal state
+
+Important limitation for this checkpoint:
+
+- cancel and retry buttons are intentionally hidden until server-side cancel/retry semantics exist
+
+This keeps the UI honest and avoids pretending we support cancellation when the server does not.
 
 ## Infra notes
 

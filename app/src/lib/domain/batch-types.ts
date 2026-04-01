@@ -95,6 +95,23 @@ export type BatchRunSummary = {
 
 export type BatchWorkspacePhase = "intake" | "processing" | "results";
 
+export type BatchJobPhase = "queued" | "running" | "completed" | "failed";
+
+export type BatchJobSnapshot = {
+  version: 1;
+  phase: BatchJobPhase;
+  rows: BatchImportRow[];
+  forceRefresh: boolean;
+  handleJobs: Record<string, BatchHandleJob>;
+  rowResults: BatchRowResult[];
+  summary: BatchRunSummary;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+  historyRunId: string | null;
+  runId?: string | null;
+};
+
 // ---------------------------------------------------------------------------
 // Handle key utility
 // ---------------------------------------------------------------------------

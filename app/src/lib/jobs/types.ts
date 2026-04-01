@@ -96,6 +96,11 @@ export type JobStore = {
   findByIdempotencyKey: (idempotencyKey: string) => Promise<JobRecord | null>;
   getJobDetails: (jobId: string) => Promise<JobDetails | null>;
   insertJob: (input: CreateJobInput, now: Date) => Promise<JobRecord>;
+  updateJobResult: (
+    jobId: string,
+    result: unknown,
+    now: Date
+  ) => Promise<JobRecord>;
   insertOutboxEvent: (event: OutboxEventRecord) => Promise<void>;
   claimJob: (
     jobId: string,

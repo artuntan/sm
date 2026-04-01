@@ -29,13 +29,13 @@ import { extractUniqueHandles } from "./batch-parser";
 // ---------------------------------------------------------------------------
 
 /** Per-platform concurrency limits */
-const CONCURRENCY: Record<Platform, number> = {
+export const DEFAULT_BATCH_CONCURRENCY: Record<Platform, number> = {
   instagram: 3,
   tiktok: 1,   // Apify TikTok actors have strict memory limits
 };
 
 /** Max retry attempts per handle */
-const MAX_ATTEMPTS = 3;
+export const DEFAULT_BATCH_HANDLE_MAX_ATTEMPTS = 3;
 
 /** Base delay for jittered exponential backoff (ms) */
 const RETRY_BASE_DELAY_MS = 2000;
@@ -270,7 +270,7 @@ export function runBatchQueue(
         username,
         status: "queued",
         attempts: 0,
-        maxAttempts: MAX_ATTEMPTS,
+        maxAttempts: DEFAULT_BATCH_HANDLE_MAX_ATTEMPTS,
         error: null,
         result: null,
       });
@@ -285,7 +285,7 @@ export function runBatchQueue(
         username,
         status: "queued",
         attempts: 0,
-        maxAttempts: MAX_ATTEMPTS,
+        maxAttempts: DEFAULT_BATCH_HANDLE_MAX_ATTEMPTS,
         error: null,
         result: null,
       });
@@ -419,8 +419,8 @@ export function runBatchQueue(
 
   // Run both platform pools concurrently
   const batchPromise = Promise.all([
-    processPool("instagram", igQueue, CONCURRENCY.instagram),
-    processPool("tiktok", tkQueue, CONCURRENCY.tiktok),
+    processPool("instagram", igQueue, DEFAULT_BATCH_CONCURRENCY.instagram),
+    processPool("tiktok", tkQueue, DEFAULT_BATCH_CONCURRENCY.tiktok),
   ]).then(() => {
     if (!cancelled) {
       callbacks.onComplete();
@@ -458,8 +458,8 @@ export function runBatchQueue(
       callbacks.onUpdate();
 
       Promise.all([
-        processPool("instagram", newIgQueue, CONCURRENCY.instagram),
-        processPool("tiktok", newTkQueue, CONCURRENCY.tiktok),
+        processPool("instagram", newIgQueue, DEFAULT_BATCH_CONCURRENCY.instagram),
+        processPool("tiktok", newTkQueue, DEFAULT_BATCH_CONCURRENCY.tiktok),
       ]).then(() => {
         if (!cancelled) callbacks.onComplete();
       });

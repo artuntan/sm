@@ -35,7 +35,7 @@ type RateLimitResult = {
 const stores = new Map<string, Map<string, RateLimitEntry>>();
 
 // Periodic cleanup to prevent memory leak (every 5 min)
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const store of stores.values()) {
     for (const [key, entry] of store) {
@@ -43,6 +43,8 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000);
+
+cleanupTimer.unref?.();
 
 export function createRateLimiter(config: RateLimiterConfig) {
   const storeKey = `${config.maxRequests}:${config.windowMs}`;
@@ -78,9 +80,17 @@ export function createRateLimiter(config: RateLimiterConfig) {
  * Uses X-Forwarded-For (for proxied requests) or falls back to a generic key.
  */
 export async function getRateLimitKey(prefix: string): Promise<string> {
-  const h = await headers();
-  const forwarded = h.get("x-forwarded-for");
-  const ip = forwarded?.split(",")[0]?.trim() || "unknown";
+  let ip = "unknown";
+
+  try {
+    const h = await headers();
+    const forwarded = h.get("x-forwarded-for");
+    ip = forwarded?.split(",")[0]?.trim() || "unknown";
+  } catch {
+    // Route handlers invoked directly in tests do not have a Next request scope.
+    // Falling back to a shared test bucket is fine for local/unit verification.
+  }
+
   return `${prefix}:${ip}`;
 }
 

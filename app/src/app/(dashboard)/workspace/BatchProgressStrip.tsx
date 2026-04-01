@@ -19,8 +19,8 @@ export function BatchProgressStrip({
 }: {
   summary: BatchRunSummary;
   phase: BatchWorkspacePhase;
-  onCancel: () => void;
-  onRetryErrors: () => void;
+  onCancel?: () => void;
+  onRetryErrors?: () => void;
 }) {
   const progress = summary.totalHandles > 0
     ? Math.round((summary.completedHandles / summary.totalHandles) * 100)
@@ -94,7 +94,7 @@ export function BatchProgressStrip({
 
         {/* Actions */}
         <div className="flex gap-2">
-          {phase === "processing" && (
+          {phase === "processing" && onCancel && (
             <button
               onClick={onCancel}
               className="text-[10px] px-3 py-1.5 rounded-md font-medium tracking-wider transition-all hover:opacity-80"
@@ -103,7 +103,7 @@ export function BatchProgressStrip({
               CANCEL
             </button>
           )}
-          {phase === "results" && summary.errorRows > 0 && (
+          {phase === "results" && summary.errorRows > 0 && onRetryErrors && (
             <button
               onClick={onRetryErrors}
               className="text-[10px] px-3 py-1.5 rounded-md font-medium tracking-wider transition-all hover:opacity-80"

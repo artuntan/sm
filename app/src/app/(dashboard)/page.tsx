@@ -3,23 +3,19 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type {
-  PlatformAnalysis,
-  Platform,
-} from "@/lib/domain/types";
-import type {
   BatchImportRow,
   BatchHandleJob,
   BatchRowResult,
+  BatchJobSnapshot,
   BatchRunSummary,
   BatchWorkspacePhase,
   BatchValidationError,
 } from "@/lib/domain/batch-types";
 import { parseBatchInput } from "@/lib/domain/batch-parser";
+import { createQueuedHandleJobs } from "@/lib/domain/batch-engine";
 import {
-  runBatchQueue,
   composeRowResult,
   computeBatchSummary,
-  type BatchQueueHandle,
 } from "@/lib/domain/batch-queue";
 import { signOut } from "@/lib/auth/client";
 import { AuthSpinner } from "@/app/components/ui/Skeleton";
@@ -30,39 +26,17 @@ import { BatchProgressStrip } from "./workspace/BatchProgressStrip";
 import { BatchResultMatrix } from "./workspace/BatchResultMatrix";
 import { SelectedRowDetail } from "./workspace/SelectedRowDetail";
 
+const ACTIVE_BATCH_JOB_STORAGE_KEY = "sm.activeBatchJobId";
+const BATCH_JOB_POLL_INTERVAL_MS = 2_000;
 
-// ---------------------------------------------------------------------------
-// Fetch function for batch queue
-// ---------------------------------------------------------------------------
-
-async function fetchPlatformAnalysis(
-  platform: Platform,
-  username: string,
-  signal?: AbortSignal,
-  pairedWith?: string
-): Promise<PlatformAnalysis> {
-  const res = await fetch("/api/analyze-single", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ platform, username, ...(pairedWith ? { pairedWith } : {}) }),
-    signal,
-  });
-
-  // Parse body regardless of HTTP status — API sends PlatformAnalysis on 502 too
-  const result: PlatformAnalysis = await res.json().catch(() => null);
-
-  // HTTP-level failure without a parseable body
-  if (!result) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-
-  // Defense-in-depth: check logical error status even if HTTP was 200
-  if (result.status === "error") {
-    throw new Error(result.error || "Platform analysis failed");
-  }
-
-  return result;
-}
+type BatchJobStatusResponse = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  rows: BatchImportRow[];
+  handleJobs: BatchJobSnapshot["handleJobs"];
+  summary: BatchRunSummary;
+  historyRunId: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // MAIN PAGE — Auth-Gated Batch Workspace
@@ -156,9 +130,8 @@ export default function Home() {
   const [parseErrors, setParseErrors] = useState<BatchValidationError[]>([]);
   const [handleJobs, setHandleJobs] = useState<Map<string, BatchHandleJob>>(new Map());
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [updateTick, setUpdateTick] = useState(0);
-  const queueHandleRef = useRef<BatchQueueHandle | null>(null);
-  const batchStartRef = useRef<string>(new Date().toISOString());
+  const [activeBatchJobId, setActiveBatchJobId] = useState<string | null>(null);
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   // Matrix controls
   const [sortField, setSortField] = useState<SortField>("index");
@@ -183,155 +156,169 @@ export default function Home() {
     return result;
   }, [rawInput]);
 
+  const clearActiveBatchJob = useCallback(() => {
+    setActiveBatchJobId(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(ACTIVE_BATCH_JOB_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const storedJobId = window.localStorage.getItem(ACTIVE_BATCH_JOB_STORAGE_KEY);
+    if (storedJobId) {
+      setActiveBatchJobId(storedJobId);
+      setPhase("processing");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (authState !== "authorized" || !activeBatchJobId) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/batch-jobs/${activeBatchJobId}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            if (!cancelled) {
+              clearActiveBatchJob();
+              setBatchError("The active batch job could not be found anymore.");
+              setPhase("intake");
+            }
+            return;
+          }
+
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const snapshot = (await response.json()) as BatchJobStatusResponse;
+        if (cancelled) {
+          return;
+        }
+
+        setBatchError(null);
+        setRows(snapshot.rows ?? []);
+        setHandleJobs(new Map(Object.entries(snapshot.handleJobs ?? {})));
+        lastSavedRunIdRef.current = snapshot.historyRunId ?? null;
+
+        const isTerminal =
+          snapshot.status === "completed" ||
+          snapshot.status === "failed" ||
+          snapshot.status === "cancelled";
+
+        setPhase(isTerminal ? "results" : "processing");
+
+        if (isTerminal) {
+          clearActiveBatchJob();
+          return;
+        }
+
+        timeoutId = setTimeout(poll, BATCH_JOB_POLL_INTERVAL_MS);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setBatchError(
+          error instanceof Error
+            ? error.message
+            : "Failed to refresh batch job progress."
+        );
+        timeoutId = setTimeout(poll, BATCH_JOB_POLL_INTERVAL_MS * 2);
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [activeBatchJobId, authState, clearActiveBatchJob]);
+
   // Start batch analysis
-  const handleStartAnalysis = useCallback(() => {
+  const handleStartAnalysis = useCallback(async () => {
     const result = parseBatchInput(rawInput);
     setRows(result.rows);
     setParseErrors(result.errors);
+    setBatchError(null);
 
     if (result.rows.length === 0) return;
 
-    const jobs = new Map<string, BatchHandleJob>();
-    setHandleJobs(jobs);
+    const queuedHandleJobs = createQueuedHandleJobs(result.rows);
+    setHandleJobs(queuedHandleJobs);
     setPhase("processing");
     setSelectedRowId(null);
+    lastSavedRunIdRef.current = null;
 
-    // Build pair-lookup maps: for each handle, find the paired username on the other platform
-    const pairLookup = new Map<string, string>();
-    for (const row of result.rows) {
-      if (row.instagramUsername && row.tiktokUsername) {
-        // IG handle → paired TT username
-        pairLookup.set(`instagram:${row.instagramUsername}`, row.tiktokUsername);
-        // TT handle → paired IG username
-        pairLookup.set(`tiktok:${row.tiktokUsername}`, row.instagramUsername);
+    try {
+      const response = await fetch("/api/analyze-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: result.rows,
+          forceRefresh: false,
+        }),
+      });
+
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.jobId) {
+        throw new Error(
+          body?.error?.message ?? "Failed to start batch analysis."
+        );
       }
+
+      setActiveBatchJobId(body.jobId);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACTIVE_BATCH_JOB_STORAGE_KEY, body.jobId);
+      }
+    } catch (error) {
+      clearActiveBatchJob();
+      setPhase("intake");
+      setHandleJobs(new Map());
+      setBatchError(
+        error instanceof Error
+          ? error.message
+          : "Failed to start batch analysis."
+      );
     }
-
-    // Wrap fetchPlatformAnalysis with pair context
-    const fetchWithPairContext = (platform: Platform, username: string, signal?: AbortSignal) => {
-      const pairedWith = pairLookup.get(`${platform}:${username}`);
-      return fetchPlatformAnalysis(platform, username, signal, pairedWith);
-    };
-
-    const queueHandle = runBatchQueue(
-      result.rows,
-      jobs,
-      fetchWithPairContext,
-      {
-        onUpdate: () => {
-          setHandleJobs(jobs);
-          setUpdateTick((t) => t + 1);
-        },
-        onComplete: () => {
-          setPhase("results");
-          setUpdateTick((t) => t + 1);
-
-          // Persist to team history — awaited with explicit error surfacing
-          (async () => {
-            try {
-              const rowResults = result.rows.map((r) => composeRowResult(r, jobs));
-              const summary = computeBatchSummary(result.rows, jobs);
-              const inputSummary = result.rows.map((r) => ({
-                instagram: r.instagramUsername,
-                tiktok: r.tiktokUsername,
-                label: r.label,
-              }));
-
-              const saveRes = await fetch("/api/history/save", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  status: summary.errorRows === summary.totalRows ? "error" :
-                          summary.completeRows === summary.totalRows ? "complete" :
-                          summary.partialRows > 0 || summary.errorRows > 0 ? "partial" : "complete",
-                  totalRows: summary.totalRows,
-                  completeRows: summary.completeRows,
-                  partialRows: summary.partialRows,
-                  errorRows: summary.errorRows,
-                  inputSummary,
-                  resultSnapshot: rowResults.map((rr) => ({
-                    _v: 2,
-                    row: { id: rr.row.id, instagramUsername: rr.row.instagramUsername, tiktokUsername: rr.row.tiktokUsername, label: rr.row.label },
-                    status: rr.status,
-                    instagram: rr.instagram ?? null,
-                    tiktok: rr.tiktok ?? null,
-                    warnings: rr.warnings,
-                  })),
-                  startedAt: batchStartRef.current,
-                  schemaVersion: 2,
-                }),
-              });
-
-              if (!saveRes.ok) {
-                const errBody = await saveRes.json().catch(() => ({}));
-                console.error("[history] Save failed:", saveRes.status, errBody);
-              } else {
-                const savedData = await saveRes.json().catch(() => ({}));
-                if (savedData.runId) {
-                  lastSavedRunIdRef.current = savedData.runId;
-                }
-              }
-            } catch (err) {
-              console.error("[history] Save error:", err);
-            }
-
-            // Auto-link influencer identities for rows with both platforms
-            try {
-              for (const rr of rowResults) {
-                const ig = rr.row.instagramUsername;
-                const tt = rr.row.tiktokUsername;
-                if (ig && tt) {
-                  await fetch("/api/warehouse/link", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ instagramUsername: ig, tiktokUsername: tt }),
-                  });
-                }
-              }
-            } catch {}
-          })();
-        },
-      }
-    );
-
-    queueHandleRef.current = queueHandle;
-  }, [rawInput]);
-
-  // Cancel
-  const handleCancel = useCallback(() => {
-    queueHandleRef.current?.cancel();
-    setPhase("results");
-  }, []);
+  }, [clearActiveBatchJob, rawInput]);
 
   // Reset to intake
   const handleReset = useCallback(() => {
-    queueHandleRef.current?.cancel();
+    clearActiveBatchJob();
     setPhase("intake");
     setRows([]);
     setParseErrors([]);
     setHandleJobs(new Map());
     setSelectedRowId(null);
     setRawInput("");
-    setUpdateTick(0);
-  }, []);
-
-  // Retry errors
-  const handleRetryErrors = useCallback(() => {
-    setPhase("processing");
-    queueHandleRef.current?.retryErrors();
-  }, []);
+    setBatchError(null);
+    lastSavedRunIdRef.current = null;
+  }, [clearActiveBatchJob]);
 
   // Computed row results
   const rowResults: BatchRowResult[] = useMemo(() => {
-    void updateTick; // dependency
     return rows.map((row) => composeRowResult(row, handleJobs));
-  }, [rows, handleJobs, updateTick]);
+  }, [rows, handleJobs]);
 
   // Computed summary
   const summary: BatchRunSummary = useMemo(() => {
-    void updateTick;
     return computeBatchSummary(rows, handleJobs);
-  }, [rows, handleJobs, updateTick]);
+  }, [rows, handleJobs]);
 
   // Filtered + sorted results
   const filteredResults = useMemo(() => {
@@ -476,6 +463,19 @@ export default function Home() {
   return (
     <>
       <div>
+        {batchError && (
+          <div
+            className="mb-4 rounded-md border px-3 py-2 text-xs"
+            style={{
+              backgroundColor: "rgba(255,45,120,0.08)",
+              borderColor: "rgba(255,45,120,0.2)",
+              color: "var(--accent-pink)",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            {batchError}
+          </div>
+        )}
         {phase !== "intake" && (
           <div className="mb-4">
             <button
@@ -509,8 +509,6 @@ export default function Home() {
             <BatchProgressStrip
               summary={summary}
               phase={phase}
-              onCancel={handleCancel}
-              onRetryErrors={handleRetryErrors}
             />
 
             {/* Matrix Controls */}
@@ -599,9 +597,6 @@ export default function Home() {
               <SelectedRowDetail
                 result={selectedResult}
                 onClose={() => setSelectedRowId(null)}
-                onRetryHandle={(platform, username) => {
-                  queueHandleRef.current?.retryHandle(platform, username);
-                }}
               />
             )}
 

@@ -14,6 +14,7 @@
  *   7. Run benchmark selection + visibility estimation
  */
 
+import crypto from "crypto";
 import { normalizeUsername } from "@/lib/domain/normalize";
 import {
   selectDualBenchmark,
@@ -29,12 +30,21 @@ import type {
 } from "@/lib/domain/types";
 import { getProvider } from "@/lib/providers/factory";
 import { ProviderError } from "@/lib/providers/interface";
+import { db } from "@/lib/db";
+import { analysisRun } from "@/lib/db/schema";
+import type {
+  BatchHandleJob,
+  BatchImportRow,
+  BatchRowResult,
+} from "@/lib/domain/batch-types";
+import { computeBatchSummary } from "@/lib/domain/batch-queue";
 import {
   getCachedProviderResult,
   cacheProviderResult,
 } from "@/lib/services/scan-cache-service";
 import { ingestContentItems } from "@/lib/services/media-warehouse-service";
 import { updateScanProfile } from "@/lib/services/adaptive-scan-service";
+import { ensureIdentity } from "@/lib/services/identity-service";
 
 // ---------------------------------------------------------------------------
 // Username validation
@@ -314,6 +324,7 @@ export function buildErrorResult(
 
 export type AnalyzeCreatorOptions = {
   forceRefresh?: boolean;
+  pairedWith?: string | null;
 };
 
 /**
@@ -404,4 +415,168 @@ export async function analyzeCreator(
 
     return buildErrorResult(platform, username, message);
   }
+}
+
+function normalizeIdentityPair(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = normalizeUsername(value);
+  return normalized.length > 0 ? normalized : null;
+}
+
+export async function analyzeCreatorWithIdentity(
+  platform: Platform,
+  rawUsername: string,
+  options: AnalyzeCreatorOptions = {},
+): Promise<PlatformAnalysis> {
+  const result = await analyzeCreator(platform, rawUsername, options);
+
+  try {
+    const normalizedUsername = normalizeUsername(rawUsername);
+    const pairedWith = normalizeIdentityPair(options.pairedWith);
+    const instagramUsername =
+      platform === "instagram" ? normalizedUsername : pairedWith;
+    const tiktokUsername =
+      platform === "tiktok" ? normalizedUsername : pairedWith;
+
+    await ensureIdentity(instagramUsername, tiktokUsername);
+  } catch (error) {
+    console.error("[identity] Failed to update creator identity", {
+      platform,
+      username: rawUsername,
+      pairedWith: options.pairedWith ?? null,
+      error,
+    });
+  }
+
+  return result;
+}
+
+export type PersistBatchAnalysisRunInput = {
+  teamId: string;
+  userId: string;
+  rows: BatchImportRow[];
+  rowResults: BatchRowResult[];
+  status?: "complete" | "partial" | "error";
+  startedAt: string | Date;
+  completedAt?: string | Date | null;
+  schemaVersion?: number;
+};
+
+function resolveBatchRunStatus(
+  rowResults: BatchRowResult[],
+): "complete" | "partial" | "error" {
+  if (rowResults.length === 0) {
+    return "error";
+  }
+
+  if (rowResults.every((rowResult) => rowResult.status === "error")) {
+    return "error";
+  }
+
+  if (rowResults.every((rowResult) => rowResult.status === "complete")) {
+    return "complete";
+  }
+
+  return "partial";
+}
+
+function toDate(value: string | Date | null | undefined): Date {
+  if (value instanceof Date) {
+    return value;
+  }
+
+  return value ? new Date(value) : new Date();
+}
+
+export async function persistBatchAnalysisRun(
+  input: PersistBatchAnalysisRunInput,
+): Promise<{ runId: string }> {
+  const handleJobs = new Map<string, BatchHandleJob>(
+    input.rowResults.flatMap((rowResult) => {
+      const pairs: [string, BatchHandleJob][] = [];
+
+      if (rowResult.row.instagramUsername) {
+        pairs.push([
+          `instagram:${rowResult.row.instagramUsername}`,
+          {
+            platform: "instagram",
+            username: rowResult.row.instagramUsername,
+            status: rowResult.instagram
+              ? rowResult.instagram.status === "error"
+                ? "error"
+                : "success"
+              : "queued",
+            attempts: 1,
+            maxAttempts: 1,
+            error: rowResult.instagram?.error ?? null,
+            result: rowResult.instagram,
+          },
+        ]);
+      }
+
+      if (rowResult.row.tiktokUsername) {
+        pairs.push([
+          `tiktok:${rowResult.row.tiktokUsername}`,
+          {
+            platform: "tiktok",
+            username: rowResult.row.tiktokUsername,
+            status: rowResult.tiktok
+              ? rowResult.tiktok.status === "error"
+                ? "error"
+                : "success"
+              : "queued",
+            attempts: 1,
+            maxAttempts: 1,
+            error: rowResult.tiktok?.error ?? null,
+            result: rowResult.tiktok,
+          },
+        ]);
+      }
+
+      return pairs;
+    })
+  );
+  const summary = computeBatchSummary(
+    input.rows,
+    handleJobs
+  );
+
+  const runId = crypto.randomUUID();
+
+  await db.insert(analysisRun).values({
+    id: runId,
+    teamId: input.teamId,
+    userId: input.userId,
+    status: input.status ?? resolveBatchRunStatus(input.rowResults),
+    totalRows: summary.totalRows,
+    completeRows: summary.completeRows,
+    partialRows: summary.partialRows,
+    errorRows: summary.errorRows,
+    inputSummary: input.rows.map((row) => ({
+      instagram: row.instagramUsername,
+      tiktok: row.tiktokUsername,
+      label: row.label,
+    })),
+    resultSnapshot: input.rowResults.map((rowResult) => ({
+      _v: 2,
+      row: {
+        id: rowResult.row.id,
+        instagramUsername: rowResult.row.instagramUsername,
+        tiktokUsername: rowResult.row.tiktokUsername,
+        label: rowResult.row.label,
+      },
+      status: rowResult.status,
+      instagram: rowResult.instagram ?? null,
+      tiktok: rowResult.tiktok ?? null,
+      warnings: rowResult.warnings,
+    })),
+    schemaVersion: input.schemaVersion ?? 2,
+    startedAt: toDate(input.startedAt),
+    completedAt: toDate(input.completedAt ?? new Date()),
+  });
+
+  return { runId };
 }

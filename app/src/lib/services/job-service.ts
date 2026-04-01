@@ -157,6 +157,18 @@ export function createInMemoryJobStore(): JobStore {
       attemptsByJobId.set(job.id, []);
       return clone(job);
     },
+    async updateJobResult(jobId, result, now) {
+      const job = jobs.get(jobId);
+      if (!job) {
+        throw new Error(`Job ${jobId} not found`);
+      }
+
+      job.resultJson = result;
+      job.updatedAt = now.toISOString();
+      jobs.set(jobId, clone(job));
+
+      return clone(job);
+    },
     async insertOutboxEvent(event) {
       outboxEvents.set(event.id, clone(event));
     },
@@ -370,6 +382,22 @@ export const dbJobStore: JobStore = {
 
     return existing;
   },
+  async updateJobResult(jobId, result, now) {
+    const rows = await db
+      .update(jobTable)
+      .set({
+        resultJson: result,
+        updatedAt: now,
+      })
+      .where(eq(jobTable.id, jobId))
+      .returning();
+
+    if (!rows[0]) {
+      throw new Error(`Job ${jobId} not found`);
+    }
+
+    return mapJobRow(rows[0]);
+  },
   async insertOutboxEvent(event) {
     await db.insert(outboxEventTable).values({
       id: event.id,
@@ -554,6 +582,9 @@ export function createJobService({
     async getJobDetails(jobId: string): Promise<JobDetails | null> {
       return store.getJobDetails(jobId);
     },
+    async updateJobResult(jobId: string, result: unknown): Promise<JobRecord> {
+      return store.updateJobResult(jobId, result, now());
+    },
   };
 }
 
@@ -568,4 +599,11 @@ export async function enqueueJob(input: CreateJobInput): Promise<JobRecord> {
 
 export async function getJobDetails(jobId: string): Promise<JobDetails | null> {
   return defaultJobService.getJobDetails(jobId);
+}
+
+export async function updateJobResult(
+  jobId: string,
+  result: unknown
+): Promise<JobRecord> {
+  return defaultJobService.updateJobResult(jobId, result);
 }

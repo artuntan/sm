@@ -111,7 +111,14 @@ When resuming in a later session:
   - Added targeted tests for idempotent enqueue, retry progression, terminal failure, and job status access
   - Added `jobs:drain:once` and `jobs:test` commands plus an operations runbook with reserved SQS/DLQ names
   - Verified the migration and drain command against the local compose Postgres through the builder image
-- [ ] Task 5 next: move batch analysis off the request lifecycle
+- [x] Task 5 complete on branch `sm-rebuild-phase0`
+  - `POST /api/analyze-all` now enqueues durable `batch.analysis` jobs while preserving the legacy cross-platform single-request path
+  - Added `GET /api/batch-jobs/[id]` and a shared batch snapshot contract for rows, handle progress, summary, and persisted history run ids
+  - Moved batch persistence into the server-side job handler so completed batches write `analysis_run` history without depending on the browser
+  - Updated the dashboard to store the active batch job id in `localStorage` and poll the batch job endpoint so refreshes resume instead of resetting
+  - Hid client-side cancel/retry controls until server-side semantics exist, keeping the UI truthful during the incremental rebuild
+  - Verified with targeted Task 5 tests, full app tests, and a production build
+  - Manual browser refresh smoke verification is still recommended on the next QA pass because this environment did not run an interactive browser session
 
 ## Global Verification Commands
 

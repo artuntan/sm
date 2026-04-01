@@ -13,8 +13,18 @@
  */
 
 import type { Platform, PlatformAnalysis } from "./types";
-import type { BatchImportRow, BatchHandleJob } from "./batch-types";
+import type {
+  BatchImportRow,
+  BatchHandleJob,
+  BatchJobPhase,
+  BatchJobSnapshot,
+} from "./batch-types";
 import { handleJobKey } from "./batch-types";
+import {
+  composeRowResult,
+  computeBatchSummary,
+  DEFAULT_BATCH_HANDLE_MAX_ATTEMPTS,
+} from "./batch-queue";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -40,6 +50,94 @@ const DEFAULT_CONFIG: BatchEngineConfig = {
   retryBaseDelayMs: 2000,
   apiEndpoint: "/api/analyze-single",
 };
+
+export function createQueuedHandleJobs(
+  rows: BatchImportRow[],
+  maxAttempts = DEFAULT_BATCH_HANDLE_MAX_ATTEMPTS
+): Map<string, BatchHandleJob> {
+  const handleJobs = new Map<string, BatchHandleJob>();
+
+  for (const row of rows) {
+    if (row.instagramUsername) {
+      const key = handleJobKey("instagram", row.instagramUsername);
+      if (!handleJobs.has(key)) {
+        handleJobs.set(key, {
+          platform: "instagram",
+          username: row.instagramUsername,
+          status: "queued",
+          attempts: 0,
+          maxAttempts,
+          error: null,
+          result: null,
+        });
+      }
+    }
+
+    if (row.tiktokUsername) {
+      const key = handleJobKey("tiktok", row.tiktokUsername);
+      if (!handleJobs.has(key)) {
+        handleJobs.set(key, {
+          platform: "tiktok",
+          username: row.tiktokUsername,
+          status: "queued",
+          attempts: 0,
+          maxAttempts,
+          error: null,
+          result: null,
+        });
+      }
+    }
+  }
+
+  return handleJobs;
+}
+
+export function serializeHandleJobs(
+  handleJobs: Map<string, BatchHandleJob>
+): Record<string, BatchHandleJob> {
+  return Object.fromEntries(handleJobs.entries());
+}
+
+export function deserializeHandleJobs(
+  serialized: Record<string, BatchHandleJob> | null | undefined
+): Map<string, BatchHandleJob> {
+  return new Map(Object.entries(serialized ?? {}));
+}
+
+export function buildBatchJobSnapshot({
+  rows,
+  handleJobs,
+  forceRefresh,
+  phase,
+  startedAt,
+  updatedAt,
+  completedAt = null,
+  historyRunId = null,
+}: {
+  rows: BatchImportRow[];
+  handleJobs: Map<string, BatchHandleJob>;
+  forceRefresh: boolean;
+  phase: BatchJobPhase;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string | null;
+  historyRunId?: string | null;
+}): BatchJobSnapshot {
+  return {
+    version: 1,
+    phase,
+    rows,
+    forceRefresh,
+    handleJobs: serializeHandleJobs(handleJobs),
+    rowResults: rows.map((row) => composeRowResult(row, handleJobs)),
+    summary: computeBatchSummary(rows, handleJobs),
+    startedAt,
+    updatedAt,
+    completedAt,
+    historyRunId,
+    runId: historyRunId,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Engine
