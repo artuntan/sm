@@ -7,6 +7,7 @@
  */
 import { requireApproved } from "@/lib/auth/guards";
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { internalError } from "@/lib/api-error";
 import { db } from "@/lib/db";
 import {
@@ -19,6 +20,11 @@ import { evaluateFreshness } from "@/lib/services/scan-cache-service";
 import { getAdaptiveTtl } from "@/lib/services/adaptive-scan-service";
 import { selectDualBenchmarkFromItems } from "@/lib/domain/selection";
 import type { Platform, ProviderResult } from "@/lib/domain/types";
+import {
+  attachRequestId,
+  getOrCreateRequestId,
+} from "@/lib/logging/request-context";
+import { getRouteLogger } from "@/lib/logging/logger";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -208,8 +214,10 @@ function bestFreshness(
 // ---------------------------------------------------------------------------
 
 export async function GET(request: NextRequest) {
+  const requestId = getOrCreateRequestId(request);
+  const routeLogger = getRouteLogger(request, "/api/warehouse", {}, requestId);
   const user = await requireApproved();
-  if (user instanceof NextResponse) return user;
+  if (user instanceof NextResponse) return attachRequestId(user, requestId);
 
   // Parse pagination
   const url = new URL(request.url);
@@ -294,15 +302,22 @@ export async function GET(request: NextRequest) {
     const totalCount = identities.length;
     const paginated = identities.slice(offset, offset + limit);
 
-    return NextResponse.json({
-      identities: paginated,
-      totalCount,
-      freshCount: identities.filter((i) => i.freshness === "fresh").length,
-      staleCount: identities.filter((i) => i.freshness === "stale").length,
-      expiredCount: identities.filter((i) => i.freshness === "expired").length,
-    });
+    return attachRequestId(
+      NextResponse.json({
+        identities: paginated,
+        totalCount,
+        freshCount: identities.filter((i) => i.freshness === "fresh").length,
+        staleCount: identities.filter((i) => i.freshness === "stale").length,
+        expiredCount: identities.filter((i) => i.freshness === "expired").length,
+      }),
+      requestId
+    );
   } catch (err) {
-    console.error("[warehouse] Error:", err);
-    return internalError("Failed to load warehouse data.");
+    routeLogger.error({ err }, "Failed to load warehouse data");
+    Sentry.captureException(err, {
+      tags: { route: "/api/warehouse" },
+      extra: { requestId },
+    });
+    return attachRequestId(internalError("Failed to load warehouse data."), requestId);
   }
 }

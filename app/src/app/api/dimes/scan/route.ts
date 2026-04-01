@@ -23,6 +23,7 @@
 import { requireApproved } from "@/lib/auth/guards";
 import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { internalError } from "@/lib/api-error";
 import {
   executeScanRun,
@@ -33,16 +34,24 @@ import { getAllBrands, getVerifiedAccounts } from "@/lib/dimes/accounts";
 import { fetchPostsForAccount, type FetchIntent } from "@/lib/dimes/providers";
 import * as repo from "@/lib/dimes/repository";
 import type { DimesSocialAccount, ScanType, ScanError } from "@/lib/dimes/types";
+import {
+  attachRequestId,
+  getOrCreateRequestId,
+} from "@/lib/logging/request-context";
+import { getRouteLogger } from "@/lib/logging/logger";
 
 // Safety overlap for fast scans — avoids boundary misses
 const FAST_SCAN_OVERLAP_HOURS = 6;
 
 export async function POST(request: Request) {
+  const requestId = getOrCreateRequestId(request);
+  const routeLogger = getRouteLogger(request, "/api/dimes/scan", {}, requestId);
+
   const user = await requireApproved();
-  if (user instanceof NextResponse) return user;
+  if (user instanceof NextResponse) return attachRequestId(user, requestId);
 
   const limited = await checkRateLimit(expensiveApiLimiter, "dimes-scan");
-  if (limited) return limited;
+  if (limited) return attachRequestId(limited, requestId);
 
   try {
     const url = new URL(request.url);
@@ -87,7 +96,10 @@ export async function POST(request: Request) {
 
     // --- Mode: Live scan — call real platform providers ---
     if (autoScan && inputPosts.length === 0) {
-      console.log(`[Dimes Scan] Starting ${scanMode} scan for ${brands.length} brands`);
+      routeLogger.info(
+        { scanMode, brandCount: brands.length },
+        "Starting Dimes coverage scan"
+      );
 
       for (const brand of brands) {
         const accounts = getVerifiedAccounts(brand);
@@ -119,14 +131,26 @@ export async function POST(request: Request) {
                 elapsedDays,
               };
 
-              console.log(
+              routeLogger.info(
+                {
+                  accountId: account.id,
+                  accountHandle: account.handle,
+                  platform: account.platform,
+                  effectiveSince,
+                  elapsedDays,
+                },
                 `[Dimes Scan] ${account.platform}/@${account.handle}: fast scan since ${effectiveSince} (${elapsedDays.toFixed(1)} days elapsed)`
               );
             } else {
               // No prior scan — fall back to full for this account
               fallbackToFull = true;
               intent = { mode: "full" };
-              console.log(
+              routeLogger.info(
+                {
+                  accountId: account.id,
+                  accountHandle: account.handle,
+                  platform: account.platform,
+                },
                 `[Dimes Scan] ${account.platform}/@${account.handle}: no prior scan — falling back to full`
               );
             }
@@ -138,7 +162,15 @@ export async function POST(request: Request) {
             fallbackToFull,
           };
 
-          console.log(`[Dimes Scan] Fetching ${account.platform}/@${account.handle}...`);
+          routeLogger.info(
+            {
+              accountId: account.id,
+              accountHandle: account.handle,
+              platform: account.platform,
+              scanMode,
+            },
+            "Fetching coverage posts for verified account"
+          );
 
           try {
             const result = await fetchPostsForAccount(
@@ -148,7 +180,15 @@ export async function POST(request: Request) {
             );
 
             if (result.error) {
-              console.warn(`[Dimes Scan] ${account.platform}/@${account.handle}: ${result.error}`);
+              routeLogger.warn(
+                {
+                  accountId: account.id,
+                  accountHandle: account.handle,
+                  platform: account.platform,
+                  providerError: result.error,
+                },
+                "Provider returned an account-level coverage scan error"
+              );
               scanErrors.push({
                 accountId: account.id,
                 platform: account.platform,
@@ -165,12 +205,34 @@ export async function POST(request: Request) {
               allFetchedPosts.push({ raw, account });
             }
 
-            console.log(
-              `[Dimes Scan] ${account.platform}/@${account.handle}: ${result.posts.length} posts fetched`
+            routeLogger.info(
+              {
+                accountId: account.id,
+                accountHandle: account.handle,
+                platform: account.platform,
+                fetchedPosts: result.posts.length,
+              },
+              "Fetched coverage posts for account"
             );
           } catch (err) {
             const errorMsg = err instanceof Error ? err.message : "unknown error";
-            console.error(`[Dimes Scan] ${account.platform}/@${account.handle}: ${errorMsg}`);
+            routeLogger.error(
+              {
+                err,
+                accountId: account.id,
+                accountHandle: account.handle,
+                platform: account.platform,
+              },
+              "Coverage provider call failed"
+            );
+            Sentry.captureException(err, {
+              tags: { route: "/api/dimes/scan", stage: "provider-fetch" },
+              extra: {
+                requestId,
+                accountId: account.id,
+                platform: account.platform,
+              },
+            });
             scanErrors.push({
               accountId: account.id,
               platform: account.platform,
@@ -233,23 +295,30 @@ export async function POST(request: Request) {
 
     const modeLabel = scanMode === "fast" ? "FAST" : "FULL";
 
-    return NextResponse.json({
-      scanRun,
-      totalPostsInDb,
-      statusLabel,
-      scanMode,
-      accountWindows,
-      message:
-        `[${statusLabel}] [${modeLabel}] ` +
-        `${scanRun.newPostsIngested} new posts ingested ` +
-        `(${allFetchedPosts.length - scanRun.newPostsIngested} duplicates skipped). ` +
-        `${scanRun.clustersCreated} clusters. ` +
-        `${totalPostsInDb} total posts in DB. ` +
-        `${scanErrors.length > 0 ? `${scanErrors.length} provider errors.` : ""}`,
-    });
+    return attachRequestId(
+      NextResponse.json({
+        scanRun,
+        totalPostsInDb,
+        statusLabel,
+        scanMode,
+        accountWindows,
+        message:
+          `[${statusLabel}] [${modeLabel}] ` +
+          `${scanRun.newPostsIngested} new posts ingested ` +
+          `(${allFetchedPosts.length - scanRun.newPostsIngested} duplicates skipped). ` +
+          `${scanRun.clustersCreated} clusters. ` +
+          `${totalPostsInDb} total posts in DB. ` +
+          `${scanErrors.length > 0 ? `${scanErrors.length} provider errors.` : ""}`,
+      }),
+      requestId
+    );
   } catch (error) {
-    console.error("[Dimes Scan]", error);
-    return internalError("Scan failed.");
+    routeLogger.error({ err: error }, "Dimes scan failed unexpectedly");
+    Sentry.captureException(error, {
+      tags: { route: "/api/dimes/scan" },
+      extra: { requestId },
+    });
+    return attachRequestId(internalError("Scan failed."), requestId);
   }
 }
 
@@ -258,22 +327,34 @@ export async function POST(request: Request) {
  * Returns the daily scan configuration, scan history (from DB),
  * and per-account scan states for UI preview.
  */
-export async function GET() {
+export async function GET(request: Request) {
+  const requestId = getOrCreateRequestId(request);
+  const routeLogger = getRouteLogger(request, "/api/dimes/scan", {}, requestId);
   const user = await requireApproved();
-  if (user instanceof NextResponse) return user;
+  if (user instanceof NextResponse) return attachRequestId(user, requestId);
 
   try {
     const config = getDailyScanConfig();
     const history = await repo.getScanHistory();
     const accountScanStates = await repo.getAllAccountScanStates();
 
-    return NextResponse.json({
-      config,
-      history: history.slice(-20),
-      accountScanStates,
-    });
+    return attachRequestId(
+      NextResponse.json({
+        config,
+        history: history.slice(-20),
+        accountScanStates,
+      }),
+      requestId
+    );
   } catch (error) {
-    console.error("[Dimes Scan Config]", error);
-    return internalError("Failed to get scan config.");
+    routeLogger.error(
+      { err: error, requestId },
+      "Failed to load Dimes scan config"
+    );
+    Sentry.captureException(error, {
+      tags: { route: "/api/dimes/scan", method: "GET" },
+      extra: { requestId },
+    });
+    return attachRequestId(internalError("Failed to get scan config."), requestId);
   }
 }

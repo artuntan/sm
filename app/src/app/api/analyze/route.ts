@@ -9,6 +9,7 @@
  * Delegates to analyze-service for the core pipeline.
  */
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { requireApproved } from "@/lib/auth/guards";
 import { checkRateLimit, expensiveApiLimiter } from "@/lib/rate-limit";
 import { z } from "zod";
@@ -22,6 +23,11 @@ import {
   getLimitations,
   persistAndUpdateProfile,
 } from "@/lib/services/analyze-service";
+import {
+  attachRequestId,
+  getOrCreateRequestId,
+} from "@/lib/logging/request-context";
+import { getRouteLogger } from "@/lib/logging/logger";
 
 const AnalyzeRequestSchema = z.object({
   platform: z
@@ -40,24 +46,30 @@ function errorResponse(error: AnalyzeError): NextResponse {
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = getOrCreateRequestId(request);
+  const routeLogger = getRouteLogger(request, "/api/analyze", {}, requestId);
+
   // Auth guard
   const user = await requireApproved();
-  if (user instanceof NextResponse) return user;
+  if (user instanceof NextResponse) return attachRequestId(user, requestId);
 
   // Rate limit
   const limited = await checkRateLimit(expensiveApiLimiter, "analyze");
-  if (limited) return limited;
+  if (limited) return attachRequestId(limited, requestId);
 
   // Parse and validate request body
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return errorResponse({
-      code: "INVALID_USERNAME",
-      message: "Request body must be valid JSON with a 'username' field.",
-      statusCode: 400,
-    });
+    return attachRequestId(
+      errorResponse({
+        code: "INVALID_USERNAME",
+        message: "Request body must be valid JSON with a 'username' field.",
+        statusCode: 400,
+      }),
+      requestId
+    );
   }
 
   const parseResult = AnalyzeRequestSchema.safeParse(body);
@@ -65,11 +77,14 @@ export async function POST(request: NextRequest) {
     const message = parseResult.error.issues
       .map((i) => i.message)
       .join("; ");
-    return errorResponse({
-      code: "INVALID_USERNAME",
-      message,
-      statusCode: 400,
-    });
+    return attachRequestId(
+      errorResponse({
+        code: "INVALID_USERNAME",
+        message,
+        statusCode: 400,
+      }),
+      requestId
+    );
   }
 
   const platform = parseResult.data.platform;
@@ -79,11 +94,14 @@ export async function POST(request: NextRequest) {
   // Platform-specific username format validation
   const usernameError = validateUsername(username, platform);
   if (usernameError) {
-    return errorResponse({
-      code: "INVALID_USERNAME",
-      message: usernameError,
-      statusCode: 400,
-    });
+    return attachRequestId(
+      errorResponse({
+        code: "INVALID_USERNAME",
+        message: usernameError,
+        statusCode: 400,
+      }),
+      requestId
+    );
   }
 
   try {
@@ -100,11 +118,14 @@ export async function POST(request: NextRequest) {
       benchmark.organic.sampleSize === 0 &&
       benchmark.commercial.sampleSize === 0
     ) {
-      return errorResponse({
-        code: platform === "tiktok" ? "ZERO_CONTENT" : "ZERO_REELS",
-        message: `No ${contentLabel} found for @${username}. The account may have no ${contentLabel}.`,
-        statusCode: 404,
-      });
+      return attachRequestId(
+        errorResponse({
+          code: platform === "tiktok" ? "ZERO_CONTENT" : "ZERO_REELS",
+          message: `No ${contentLabel} found for @${username}. The account may have no ${contentLabel}.`,
+          statusCode: 404,
+        }),
+        requestId
+      );
     }
 
     // Build limitations list
@@ -131,21 +152,32 @@ export async function POST(request: NextRequest) {
     // Persist to warehouse + update scan profile (fire after response build)
     await persistAndUpdateProfile(providerResult, platform, username);
 
-    return NextResponse.json(result);
+    return attachRequestId(NextResponse.json(result), requestId);
   } catch (err) {
     if (err instanceof ProviderError) {
-      return errorResponse({
-        code: err.code as AnalyzeError["code"],
-        message: err.message,
-        statusCode: err.statusCode,
-      });
+      return attachRequestId(
+        errorResponse({
+          code: err.code as AnalyzeError["code"],
+          message: err.message,
+          statusCode: err.statusCode,
+        }),
+        requestId
+      );
     }
 
-    console.error("[/api/analyze] Unexpected error:", err);
-    return errorResponse({
-      code: "UNKNOWN_ERROR",
-      message: "An unexpected error occurred. Please try again.",
-      statusCode: 500,
+    routeLogger.error({ err }, "Unexpected error during analysis request");
+    Sentry.captureException(err, {
+      tags: { route: "/api/analyze" },
+      extra: { requestId },
     });
+
+    return attachRequestId(
+      errorResponse({
+        code: "UNKNOWN_ERROR",
+        message: "An unexpected error occurred. Please try again.",
+        statusCode: 500,
+      }),
+      requestId
+    );
   }
 }

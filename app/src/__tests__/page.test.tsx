@@ -4,11 +4,33 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom";
-import HomePage from "@/app/page";
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+    refresh: jest.fn(),
+    prefetch: jest.fn(),
+    back: jest.fn(),
+    forward: jest.fn(),
+  }),
+}));
+
+jest.mock("@/lib/auth/client", () => ({
+  signOut: jest.fn(),
+}));
+import HomePage from "@/app/(dashboard)/page";
 
 // Mock fetch globally
 const mockFetch = jest.fn();
-global.fetch = mockFetch;
+global.fetch = mockFetch as typeof fetch;
+
+const mockAuthMeResult = {
+  name: "Test User",
+  approvalStatus: "approved",
+  isSystemAdmin: false,
+  team: { teamId: "team-1", role: "team_admin", teamName: "Acme Team" },
+  hasPendingTeamRequest: false,
+};
 
 const mockMultiPlatformResult = {
   analyzedAt: "2025-03-10T12:00:00Z",
@@ -79,12 +101,37 @@ const mockMultiPlatformResult = {
 describe("HomePage", () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    mockFetch.mockImplementation(async (input) => {
+      const requestUrl =
+        typeof input === "string"
+          ? input
+          : input instanceof Request
+            ? input.url
+            : String(input);
+
+      if (requestUrl.endsWith("/api/auth/me")) {
+        return {
+          ok: true,
+          json: async () => mockAuthMeResult,
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => mockMultiPlatformResult,
+      } as Response;
+    });
   });
 
-  it("renders batch intake with guidance and guide button", () => {
+  async function renderHomePage() {
     render(<HomePage />);
+    await screen.findByText(/Paste creator handles/i);
+  }
+
+  it("renders batch intake with guidance and guide button", async () => {
+    await renderHomePage();
     // Title
-    expect(screen.getByText(/Batch Creator Analysis/i)).toBeInTheDocument();
+    expect(screen.getByText(/Analyze/i)).toBeInTheDocument();
     // Guide button present
     expect(screen.getByRole("button", { name: /open system guide/i })).toBeInTheDocument();
     // Subheadline teaches row model
@@ -92,18 +139,18 @@ describe("HomePage", () => {
     // Textarea label
     expect(screen.getByText("PASTE CREATOR ROWS")).toBeInTheDocument();
     // Capability chips
-    expect(screen.getByText("200+ CREATORS")).toBeInTheDocument();
+    expect(screen.getByText("CSV · TSV · SHEETS")).toBeInTheDocument();
   });
 
-  it("disables Start Analysis button when input is empty", () => {
-    render(<HomePage />);
+  it("disables Start Analysis button when input is empty", async () => {
+    await renderHomePage();
     const button = screen.getByRole("button", { name: /start analysis/i });
     expect(button).toBeDisabled();
   });
 
   it("enables Start Analysis when input is provided", async () => {
     const user = userEvent.setup();
-    render(<HomePage />);
+    await renderHomePage();
 
     const textarea = screen.getByRole("textbox");
     await user.type(textarea, "testuser,tk_user");
@@ -114,7 +161,7 @@ describe("HomePage", () => {
 
   it("shows preview with creator rows count", async () => {
     const user = userEvent.setup();
-    render(<HomePage />);
+    await renderHomePage();
 
     const textarea = screen.getByRole("textbox");
     await user.type(textarea, "instagram,tiktok\ncreator_a,tk_a\ncreator_b,tk_b");

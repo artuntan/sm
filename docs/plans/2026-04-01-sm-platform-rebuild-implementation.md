@@ -74,7 +74,7 @@ When resuming in a later session:
 ## Status Board
 
 - [ ] Phase 0 complete: current app stabilized and secured
-- [ ] Phase 1 complete: observability and deploy safety live
+- [x] Phase 1 complete: observability and deploy safety live
 - [ ] Phase 2 complete: durable jobs framework live
 - [ ] Phase 3 complete: tenant model and data boundaries corrected
 - [ ] Phase 4 complete: usage ledger and billing controls live
@@ -90,7 +90,14 @@ When resuming in a later session:
   - Replaced PostgreSQL-incompatible `group_concat`
   - Added targeted regression tests for DB SSL config and coverage SQL aggregation
   - Updated runtime baseline documentation and top-level README
-- [ ] Task 2 next: observability and deploy safety
+- [x] Task 2 complete on branch `sm-rebuild-phase0`
+  - Added structured logging helpers and request ID propagation
+  - Added `/api/health` and `/api/ready`
+  - Wired Sentry into Next.js server/client builds and critical routes
+  - Added targeted tests for readiness probes and request ID behavior
+  - Repaired the pre-existing UI test harness so the documented verification command set is green
+  - Documented the observability baseline and known remaining gaps
+- [ ] Task 3 next: versioned migrations and safe database evolution
 
 ## Global Verification Commands
 
@@ -187,7 +194,7 @@ Expected:
 **Required changes:**
 
 - replace ad hoc `console.*` logging in critical routes with structured logs
-- add request IDs and job correlation IDs
+- add request IDs now and defer job correlation IDs to the durable jobs task
 - expose `/api/health` and `/api/ready`
 - wire Sentry for server and client exceptions
 - define minimum CloudWatch alarms and uptime checks in docs

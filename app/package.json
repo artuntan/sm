@@ -17,10 +17,13 @@
     "db:seed": "npx tsx src/lib/db/seed.ts"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.18.0",
     "better-auth": "^1.5.5",
     "drizzle-orm": "^0.45.1",
     "next": "16.1.6",
     "next-intl": "^4.8.3",
+    "pino": "^9.9.5",
+    "pino-http": "^10.5.0",
     "pg": "^8.13.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
