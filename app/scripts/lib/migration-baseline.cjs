@@ -6,16 +6,16 @@ function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
-function getLatestJournalEntry(drizzleDir) {
+function getBaselineJournalEntry(drizzleDir) {
   const journalPath = resolve(drizzleDir, "meta", "_journal.json");
   const journal = readJson(journalPath);
-  const latestEntry = journal.entries?.[journal.entries.length - 1];
+  const baselineEntry = journal.entries?.[0];
 
-  if (!latestEntry) {
+  if (!baselineEntry) {
     throw new Error(`No migration entries found in ${journalPath}`);
   }
 
-  return latestEntry;
+  return baselineEntry;
 }
 
 function buildExpectedSchema(snapshot) {
@@ -324,9 +324,9 @@ function compareSchemaBaseline(expected, actual) {
 }
 
 function loadLatestBaseline(drizzleDir) {
-  const latestEntry = getLatestJournalEntry(drizzleDir);
-  const sqlPath = resolve(drizzleDir, `${latestEntry.tag}.sql`);
-  const snapshotPrefix = latestEntry.tag.split("_")[0];
+  const baselineEntry = getBaselineJournalEntry(drizzleDir);
+  const sqlPath = resolve(drizzleDir, `${baselineEntry.tag}.sql`);
+  const snapshotPrefix = baselineEntry.tag.split("_")[0];
   const snapshotPath = resolve(drizzleDir, "meta", `${snapshotPrefix}_snapshot.json`);
 
   if (!existsSync(sqlPath)) {
@@ -341,8 +341,8 @@ function loadLatestBaseline(drizzleDir) {
   const snapshot = readJson(snapshotPath);
 
   return {
-    tag: latestEntry.tag,
-    createdAt: latestEntry.when,
+    tag: baselineEntry.tag,
+    createdAt: baselineEntry.when,
     hash: createHash("sha256").update(sql).digest("hex"),
     expected: buildExpectedSchema(snapshot),
   };

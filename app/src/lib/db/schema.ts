@@ -46,6 +46,19 @@ export const runStatusEnum = pgEnum("run_status", [
   "partial",
   "error",
 ]);
+export const jobStatusEnum = pgEnum("job_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+export const outboxStatusEnum = pgEnum("outbox_status", [
+  "pending",
+  "processing",
+  "published",
+  "failed",
+]);
 export const campaignStatusEnum = pgEnum("campaign_status", [
   "draft",
   "active",
@@ -214,6 +227,73 @@ export const analysisRun = pgTable("analysis_run", {
   index("analysis_run_team_id_idx").on(table.teamId),
   index("analysis_run_user_id_idx").on(table.userId),
   index("analysis_run_status_idx").on(table.status),
+]);
+
+// ---------------------------------------------------------------------------
+// Durable job foundation
+// ---------------------------------------------------------------------------
+
+export const job = pgTable("job", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),
+  status: jobStatusEnum("status").notNull().default("queued"),
+  teamId: text("teamId").references(() => team.id),
+  createdBy: text("createdBy").references(() => user.id),
+  payloadJson: jsonb("payloadJson").notNull().default({}),
+  resultJson: jsonb("resultJson"),
+  idempotencyKey: text("idempotencyKey").notNull(),
+  maxAttempts: integer("maxAttempts").notNull().default(3),
+  attemptCount: integer("attemptCount").notNull().default(0),
+  priority: integer("priority").notNull().default(100),
+  availableAt: timestamp("availableAt").notNull().defaultNow(),
+  leaseExpiresAt: timestamp("leaseExpiresAt"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  lastError: text("lastError"),
+  parentJobId: text("parentJobId"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("job_idempotency_key_uidx").on(table.idempotencyKey),
+  index("job_status_available_at_idx").on(table.status, table.availableAt),
+  index("job_team_id_idx").on(table.teamId),
+  index("job_created_by_idx").on(table.createdBy),
+  index("job_parent_job_id_idx").on(table.parentJobId),
+  index("job_kind_idx").on(table.kind),
+]);
+
+export const jobAttempt = pgTable("job_attempt", {
+  id: text("id").primaryKey(),
+  jobId: text("jobId")
+    .notNull()
+    .references(() => job.id),
+  attemptNumber: integer("attemptNumber").notNull(),
+  status: text("status").notNull(),
+  error: text("error"),
+  startedAt: timestamp("startedAt").notNull().defaultNow(),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+}, (table) => [
+  index("job_attempt_job_id_idx").on(table.jobId),
+]);
+
+export const outboxEvent = pgTable("outbox_event", {
+  id: text("id").primaryKey(),
+  topic: text("topic").notNull(),
+  aggregateType: text("aggregateType"),
+  aggregateId: text("aggregateId"),
+  payloadJson: jsonb("payloadJson").notNull().default({}),
+  status: outboxStatusEnum("status").notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  availableAt: timestamp("availableAt").notNull().defaultNow(),
+  publishedAt: timestamp("publishedAt"),
+  lastError: text("lastError"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  updatedAt: timestamp("updatedAt").notNull().defaultNow(),
+}, (table) => [
+  index("outbox_event_status_available_at_idx").on(table.status, table.availableAt),
+  index("outbox_event_aggregate_idx").on(table.aggregateType, table.aggregateId),
+  index("outbox_event_topic_idx").on(table.topic),
 ]);
 
 // ---------------------------------------------------------------------------

@@ -104,7 +104,14 @@ When resuming in a later session:
   - Added a guarded `db:baseline` command that validates an older database before stamping baseline history
   - Updated local setup and app docs to use committed migrations instead of schema push
   - Documented the production and local migration workflow, including compose-network verification
-- [ ] Task 4 next: durable jobs foundation
+- [x] Task 4 complete on branch `sm-rebuild-phase0`
+  - Added durable `job`, `job_attempt`, and `outbox_event` tables to the schema plus a committed migration
+  - Introduced a local-first job queue, runner, idempotency helpers, and job service abstractions
+  - Added `GET /api/jobs/[id]` for durable job status retrieval with team/system-admin access control
+  - Added targeted tests for idempotent enqueue, retry progression, terminal failure, and job status access
+  - Added `jobs:drain:once` and `jobs:test` commands plus an operations runbook with reserved SQS/DLQ names
+  - Verified the migration and drain command against the local compose Postgres through the builder image
+- [ ] Task 5 next: move batch analysis off the request lifecycle
 
 ## Global Verification Commands
 

@@ -10,6 +10,8 @@
     "test": "jest --config jest.config.ts",
     "test:ui": "jest --config jest.ui.config.ts",
     "test:all": "npm run test && npm run test:ui",
+    "jobs:drain:once": "tsx scripts/jobs-drain-once.ts",
+    "jobs:test": "npm test -- --runInBand jobs-runner.test.ts jobs-route.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:baseline": "node scripts/db-baseline-existing.mjs",
@@ -48,6 +50,7 @@
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5"
   }
