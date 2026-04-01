@@ -11,7 +11,7 @@ Next.js application directory. See the [root README](../README.md) for full proj
 ./setup.sh
 ```
 
-This starts Postgres, installs deps, pushes the schema, and seeds data. Then:
+This starts Postgres, installs deps, applies committed migrations, and seeds data. Then:
 
 ```bash
 cd app && npm run dev    # http://localhost:3000
@@ -31,13 +31,18 @@ cd app && npm install
 # 3. Copy env file
 cp .env.example .env.local
 
-# 4. Push schema to database
-npx drizzle-kit push
+# 4. Export env for CLI tools
+set -a
+source .env.local
+set +a
 
-# 5. Seed data
+# 5. Apply committed migrations
+npm run db:migrate
+
+# 6. Seed data
 npx tsx src/lib/db/seed.ts
 
-# 6. Start dev server
+# 7. Start dev server
 npm run dev
 ```
 
@@ -51,7 +56,9 @@ npm run dev
 | `npm run lint` | ESLint check |
 | `npm run db:generate` | Generate migration from schema changes |
 | `npm run db:migrate` | Apply pending migrations |
-| `npm run db:push` | Push schema directly (dev only) |
+| `npm run db:baseline` | Stamp the current baseline into an existing pre-migrations DB after validation |
+| `npm run db:push` | Disabled safety guard — use migrations instead |
+| `npm run db:push:unsafe` | Direct schema push for disposable local environments only |
 | `npm run db:studio` | Open Drizzle Studio (DB browser) |
 | `npm run db:seed` | Seed teams + admin |
 
@@ -59,5 +66,9 @@ npm run dev
 
 See `.env.example` for all required and optional variables. The only required ones for local dev are:
 
-- `DATABASE_URL` — Postgres connection string (default: the docker-compose Postgres)
+- `DATABASE_URL` — Postgres connection string for the app and CLI tools
 - `BETTER_AUTH_SECRET` — Any random string for session signing
+
+Drizzle CLI commands read `DATABASE_URL` from your shell or from `.env.local` / `.env` via `drizzle.config.ts`.
+
+For the full schema-change procedure, baseline rules, and compose-network verification flow, use [docs/operations/database-migrations.md](../docs/operations/database-migrations.md).

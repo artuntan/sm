@@ -12,7 +12,9 @@
     "test:all": "npm run test && npm run test:ui",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:baseline": "node scripts/db-baseline-existing.mjs",
+    "db:push": "node scripts/db-push-guard.mjs",
+    "db:push:unsafe": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "npx tsx src/lib/db/seed.ts"
   },

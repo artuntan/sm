@@ -29,10 +29,16 @@ else
   echo "· .env.local already exists, skipping"
 fi
 
-# Push schema to database
+# Export local env vars so CLI tools receive DATABASE_URL and auth settings.
+set -a
+# shellcheck disable=SC1091
+source .env.local
+set +a
+
+# Apply committed migrations to database
 echo ""
-echo "🗄️  Pushing database schema..."
-npx drizzle-kit push
+echo "🗄️  Applying database migrations..."
+npm run db:migrate
 
 # Seed data
 echo ""

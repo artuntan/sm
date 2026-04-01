@@ -73,7 +73,7 @@ When resuming in a later session:
 
 ## Status Board
 
-- [ ] Phase 0 complete: current app stabilized and secured
+- [x] Phase 0 complete: current app stabilized and secured
 - [x] Phase 1 complete: observability and deploy safety live
 - [ ] Phase 2 complete: durable jobs framework live
 - [ ] Phase 3 complete: tenant model and data boundaries corrected
@@ -97,7 +97,14 @@ When resuming in a later session:
   - Added targeted tests for readiness probes and request ID behavior
   - Repaired the pre-existing UI test harness so the documented verification command set is green
   - Documented the observability baseline and known remaining gaps
-- [ ] Task 3 next: versioned migrations and safe database evolution
+- [x] Task 3 complete on branch `sm-rebuild-phase0`
+  - Enabled strict, verbose, timestamped Drizzle migration configuration
+  - Generated and committed the initial baseline SQL migration under `app/drizzle/`
+  - Replaced `db:push` with an explicit safety guard and added `db:push:unsafe`
+  - Added a guarded `db:baseline` command that validates an older database before stamping baseline history
+  - Updated local setup and app docs to use committed migrations instead of schema push
+  - Documented the production and local migration workflow, including compose-network verification
+- [ ] Task 4 next: durable jobs foundation
 
 ## Global Verification Commands
 

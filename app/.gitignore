@@ -33,7 +33,6 @@ data/
 *.db
 *.db-wal
 *.db-shm
-drizzle/
 
 # Vercel
 .vercel

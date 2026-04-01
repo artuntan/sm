@@ -11,7 +11,10 @@
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, and } from "drizzle-orm";
+import { loadProjectEnv } from "../../../scripts/lib/load-env.cjs";
 import * as schema from "./schema";
+
+loadProjectEnv({ cwd: process.cwd() });
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
